@@ -6,4 +6,4 @@
 ### **file** "prototype_knob_test_send_data_via_USB"
 ### **folder** smart_factory_knobs_test_send_data_via_USB
 
-# เครื่องจักรยังเป็น demo อยู่ไม่ใข่เครื่องจริง
+# เครื่องจักรยังเป็น demo อยู่ไม่ใข่เครื่องจริง (ไม่รู้ว่าของจริงเป็นกี่เครื่อง แล้วเป็นเครื่องประเภทไหน)
