@@ -6,3 +6,5 @@
 > **folder** smart_factory_knobs_test_send_data_via_USB
 > ### ถ้ามี arduino สามารถลองเล่นได้
 
+
+### เครื่องจักรยังเป็น demo อยู่ไม่ใข่เครื่องจริง
