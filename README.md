@@ -291,10 +291,13 @@ docker compose start telegraf sheets-sync
 
 ปุ่มควบคุมที่เคยอยู่แผงซ้ายของ dashboard ย้ายไปอยู่หน้า **control** แยกต่างหาก เปิดบนมือถือ / แท็บเล็ตได้ — ปุ่ม **Control ↗** มุมซ้ายบนของ dashboard เปิดหน้านี้
 
-| สถานะ ESP32 | หน้า control ทำอะไร | dashboard ทำอะไร |
-|---|---|---|
-| **offline** (ไม่มีข้อมูลจากบอร์ด 3 วินาที) | **CONTROL**: ปุ่มหมุนความเร็ว, RUN / STOP, เปิด / ปิดฝา, Set / Maintenance, Alarm, GOOD / REJECT / Undo, ไลน์จำลอง (Pause / 1× 4× 10× / Reset) | ไลน์จำลองทำตามหน้า control |
-| **online** | **MONITOR**: ดูสัญญาณทุกตัวที่บอร์ดส่ง (สถานะเครื่อง, ชิ้นงาน, ความเร็ว, alarm, QC, events, raw lines) ควบคุมไม่ได้ | ไลน์ทำตามบอร์ด |
+| หน้า control | dashboard (ป้ายมุมขวาบน) |
+|---|---|
+| **VIA BOARD · BOARD CONNECTED** — เลือก *Connect board* (ค่าเริ่มต้น) และเจอบอร์ด: ดูสัญญาณจากบอร์ดอย่างเดียว | ใช้ข้อมูลบอร์ด · **Live · via board** |
+| **SIMULATOR · CONTROL VIA WEBSITE** — กด *Disconnect board* หรือไม่เจอบอร์ด: หน้านี้เป็นบอร์ดจำลอง (ปุ่มหมุน, RUN / STOP, ฝา, Set / Maintenance, Alarm, GOOD / REJECT / Undo, ไลน์จำลอง) | ใช้ตัวจำลองจากหน้า control แม้บอร์ดจะเปิดอยู่ · **Live · control via website** |
+| **NOT LOGGED IN** — ยังไม่ใส่รหัส: กดเตรียมค่าไว้ได้ แต่ยังไม่ส่ง | ไม่เปลี่ยน |
+
+- **หน้า control เป็นตัวตัดสิน** ว่า dashboard ทุกจอใช้ข้อมูลจากบอร์ดหรือจากตัวจำลอง (ปุ่ม *Connect board* / *Disconnect board* บนแถบสถานะ) · บอร์ดจริงยังบันทึกลง database ตามปกติไม่ว่าจะเลือกแบบไหน
 
 - **หน้า dashboard แสดงผลอย่างเดียว ไม่ต้อง login:** รับข้อมูลเองจาก MQTT ช่องอ่านอย่างเดียว (`/mqtt-view`) — ป้ายสถานะบอกว่าข้อมูลมาจาก `board` หรือ `control page` · ส่งคำสั่งใดๆ ไม่ได้ · ต้องการช่องเชื่อมต่อแบบเดิม (Bluetooth / USB / Wi-Fi) ให้เปิด `…/?connect`
 - **หน้า control เป็นที่เดียวที่ต้อง login** (user `web` + `MQTT_WEB_PASS`, เบราว์เซอร์จำไว้) และเป็นที่เดียวที่สั่งงานได้ รวมถึงเลือกเส้นทาง 2 product (การ์ด **Products**) — กล่อง Products บน dashboard แสดงเส้นทางอย่างเดียว

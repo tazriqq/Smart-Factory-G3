@@ -35,8 +35,11 @@ setInterval(() => {
   if (!conn) return;
   // the control page resends every 2 s, but a browser slows a hidden tab down to about once a second or less
   const now = performance.now(), fromControl = !window.__board.live && now - controlAt < 10000, quiet = !fromControl && now - lastData > 2500;
+  // the control page decides: its "src" says whether the line follows the board or the control page's simulator
+  if (viewOnly && controlSrc === "sim") { setPill(fromControl ? "on" : "quiet", fromControl ? "Live · control via website" : "Control via website · waiting for the control page"); return; }
+  if (viewOnly && controlSrc === "board" && !window.__board.live) { setPill("quiet", "Via board · waiting for the board"); return; }
   const via = fromControl ? " · control page" : quiet ? " · no data" : " · receiving";
-  if (viewOnly) setPill(quiet ? "quiet" : "on", fromControl ? "Live · control via website" : quiet ? "Waiting for the board or the control page" : "Live · board");
+  if (viewOnly) setPill(quiet ? "quiet" : "on", fromControl ? "Live · control via website" : quiet ? "Waiting for the board or the control page" : "Live · via board");
   else setPill(quiet ? "quiet" : "on", "Connected · " + NAMES[conn.kind] + via);
 }, 500);
 const lastAdc = Array(COUNT).fill(null);
@@ -290,7 +293,7 @@ async function openMqtt(my) {
   const feed = splitter();
   client.on("message", (t, payload) => {
     if (my !== gen) return;
-    if (t === topic) feed(payload.toString() + "\n");
+    if (t === topic) { if (controlSrc !== "sim") feed(payload.toString() + "\n"); }   // the control page chose its simulator: ignore the board
     else if (t === controlTopic) { let m; try { m = JSON.parse(payload.toString()); } catch { return; } followControl(m); }
   });
   client.on("offline", () => { if (my === gen && conn) setPill("error", "MQTT · reconnecting …"); });
@@ -303,8 +306,13 @@ async function openMqtt(my) {
 }
 // the control page's state: {"pot":[..4],"run":[..4],"door":[..4],"al":0,"good":n,"rej":n,"id":"session"}
 // (retained, so it also arrives right after connecting). good / rej count up per control-page session.
-let lastControl = null, controlAt = 0;
+// src: "board" = the control page connected the board, the line follows the board; "sim" = the control page is the
+// board (its simulator), even while the real board is sending. Pages from before src existed: the board wins.
+let lastControl = null, controlAt = 0, controlSrc = null;
 function followControl(m) {
+  controlSrc = m.src === "sim" || m.src === "board" ? m.src : null;
+  if (controlSrc === "board") { lastControl = m; return; }
+  if (controlSrc === "sim" && window.__board.live) window.__board.stop();   // let go of the board at once
   if (window.__board.live || !Array.isArray(m.pot) || !Array.isArray(m.run)) return;   // the board wins
   controlAt = lastData = performance.now();
   m.pot.slice(0, COUNT).forEach((v, i) => { if (v >= 0 && v <= 1023) apply(i, v | 0); });

@@ -64,10 +64,13 @@ button,input{font:inherit}
 .mode[data-m="control"] b{color:var(--blue)}
 .mode[data-m="monitor"]{box-shadow:0 0 0 1.5px var(--green)}
 .mode[data-m="monitor"] b{color:var(--green)}
+#use-board{margin-left:auto}
 .route{margin-left:auto;font:12px var(--mono);color:var(--muted)}
 .route i{display:inline-grid;place-items:center;min-width:16px;height:16px;padding:0 4px;margin:0 4px 0 8px;font:600 10px var(--mono);font-style:normal;color:#fff;background:var(--pa)}
 .route i.b{background:var(--pb)}
 body[data-mode="monitor"] .ctl{display:none!important}
+body:not([data-mode="off"]) :is(#url,#user,#pass,.login){display:none!important}
+body:not([data-mode="off"]) #go{padding:4px 10px;font-size:12px}
 body:not([data-mode="monitor"]) .mon{display:none!important}
 
 /* alarm */
@@ -232,7 +235,7 @@ main>*{min-width:0}
       <input class="in" id="url" type="text" spellcheck="false" autocomplete="off" aria-label="MQTT broker WebSocket address">
       <input class="in" id="user" type="text" value="web" spellcheck="false" autocomplete="off" aria-label="MQTT user">
       <input class="in" id="pass" type="password" placeholder="password" autocomplete="off" aria-label="MQTT password">
-      <button class="btn" id="go" type="button">Connect</button>
+      <button class="btn" id="go" type="button">Log in</button>
       <span class="grow"></span>
       <span class="pill" id="pill" data-s="off" role="status"><i></i><span>Not connected</span></span>
     </div>
@@ -242,12 +245,13 @@ main>*{min-width:0}
       <span>board up <b id="s-up">—</b></span>
       <span>restarts seen <b id="s-rst">0</b></span>
     </div>
-    <p class="hint">ใช้ user <b>web</b> กับรหัส <b>MQTT_WEB_PASS</b> (ใน server/.env) เหมือนหน้า dashboard · เบราว์เซอร์จำไว้ให้</p>
+    <p class="hint login">ใช้ user <b>web</b> กับรหัส <b>MQTT_WEB_PASS</b> (ใน server/.env) เหมือนหน้า dashboard · เบราว์เซอร์จำไว้ให้</p>
   </section>
 
   <section class="mode" id="mode" data-m="off" aria-live="polite">
     <b id="mode-t">NOT LOGGED IN</b><span id="mode-s">ใส่รหัส MQTT_WEB_PASS ด้านบนครั้งเดียว (เบราว์เซอร์จำไว้) แล้วปุ่มด้านล่างจะคุมหน้า OEE · ตอนนี้กดเตรียมค่าไว้ได้</span>
     <span class="route" id="route"></span>
+    <button class="btn" id="use-board" type="button" hidden></button>
   </section>
 
   <section class="card sim ctl" aria-label="Simulation">
@@ -421,6 +425,7 @@ function onBoard(text) {
   const now = performance.now();
   lines++; rateCount++; lastBoard = now;
   setMode();
+  if (mode() !== "monitor") { prev = m; return; }   // the simulator is in charge: the board is only noted
   if (prev && typeof m.ms === "number" && typeof prev.ms === "number" && m.ms < prev.ms) {
     restarts++; $("s-rst").textContent = restarts; event("board restarted (counters back to 0)", "r"); prev = null;
   }
@@ -461,19 +466,20 @@ function onBoard(text) {
 // what the dashboard follows; QC presses are counters, so it can tell new presses from a resent state
 // sim / setup / reset / undo are for the dashboard's simulated line only (the board has no such switches)
 const ctl = { pot: [512, 512, 512, 512], run: [1, 1, 1, 1], door: [0, 0, 0, 0], al: 0, good: 0, rej: 0, undo: 0, reset: 0,
-  setup: [0, 0, 0, 0], sim: { run: 1, speed: 4 }, route: "1234-", id: Math.random().toString(36).slice(2, 10) };
+  setup: [0, 0, 0, 0], sim: { run: 1, speed: 4 }, route: "1234-", useBoard: 1, id: Math.random().toString(36).slice(2, 10) };
 try { Object.assign(ctl, JSON.parse(remember.get("ctl-state")) || {}, { good: 0, rej: 0, undo: 0, reset: 0, id: ctl.id }); } catch {}
 let sendTimer = 0;
 function sendCtl(note, cls) {
   if (note) event(note, cls);
-  remember.set("ctl-state", JSON.stringify({ pot: ctl.pot, run: ctl.run, door: ctl.door, al: ctl.al, setup: ctl.setup, sim: ctl.sim, route: ctl.route }));
+  remember.set("ctl-state", JSON.stringify({ pot: ctl.pot, run: ctl.run, door: ctl.door, al: ctl.al, setup: ctl.setup, sim: ctl.sim, route: ctl.route, useBoard: ctl.useBoard }));
   renderCtl();
   clearTimeout(sendTimer);
   sendTimer = setTimeout(publish, 80);     // a dragged slider sends at most ~12 times a second
 }
+// src tells every dashboard what to follow: "board" (connected here) or "sim" (this page's simulator)
 function publish() {
-  if (!client || !client.connected || mode() !== "control") return;
-  const text = JSON.stringify({ ...ctl, ms: Math.round(performance.now()) });
+  if (!client || !client.connected) return;
+  const text = JSON.stringify({ ...ctl, src: mode() === "monitor" ? "board" : "sim", ms: Math.round(performance.now()) });
   client.publish(topics.control, text, { qos: 0, retain: true });
   raw("→ " + text);
 }
@@ -570,18 +576,30 @@ setInterval(renderRoute, 500);
 
 /* ---------- mode: monitor while the ESP32 is sending, control otherwise ---------- */
 let boardStatus = "";
-const mode = () => (!client || !client.connected ? "off" : lastBoard && performance.now() - lastBoard < BOARD_QUIET_MS ? "monitor" : "control");
+// monitor = the board is connected here (seen sending, and "Connect board" chosen) · control = this page is the board
+const boardSeen = () => lastBoard && performance.now() - lastBoard < BOARD_QUIET_MS;
+const mode = () => (!client || !client.connected ? "off" : ctl.useBoard && boardSeen() ? "monitor" : "control");
 function setMode() {
-  const m = mode();
+  const m = mode(), seen = boardSeen();
+  const b = $("use-board");
+  b.hidden = m === "off";
+  b.textContent = ctl.useBoard ? "Disconnect board · ใช้ตัวจำลอง" : "Connect board";
+  b.disabled = !ctl.useBoard && !seen;
+  b.title = !ctl.useBoard && !seen ? "ยังไม่เจอบอร์ด: เปิดบอร์ดและต่อ Wi-Fi ก่อน" : "";
+  $("mode-s").textContent = m === "off" ? "ใส่รหัส MQTT_WEB_PASS ด้านบนครั้งเดียว (เบราว์เซอร์จำไว้) แล้วปุ่มด้านล่างจะคุมหน้า OEE · ตอนนี้กดเตรียมค่าไว้ได้"
+    : m === "monitor" ? "หน้า OEE ใช้ข้อมูลจากบอร์ด · หน้านี้ดูสัญญาณอย่างเดียว"
+    : seen ? "บอร์ดออนไลน์อยู่ แต่หน้า OEE ใช้ตัวจำลองจากหน้านี้ · กด Connect board เพื่อใช้บอร์ด"
+    : ctl.useBoard ? "ไม่เจอบอร์ด: หน้านี้เป็นบอร์ดจำลอง หน้า OEE ทำตามปุ่มด้านล่าง · เจอบอร์ดเมื่อไรจะใช้บอร์ดเอง" : "หน้านี้เป็นบอร์ดจำลอง หน้า OEE ทำตามปุ่มด้านล่าง";
   if (document.body.dataset.mode === m) return;
   const was = document.body.dataset.mode;
   document.body.dataset.mode = m;
   $("mode").dataset.m = m;
-  $("mode-t").textContent = { off: "NOT LOGGED IN", monitor: "BOARD ONLINE · MONITOR", control: "SIMULATOR · CONTROL VIA WEBSITE" }[m];
-  $("mode-s").textContent = { off: "ใส่รหัส MQTT_WEB_PASS ด้านบนครั้งเดียว (เบราว์เซอร์จำไว้) แล้วปุ่มด้านล่างจะคุมหน้า OEE · ตอนนี้กดเตรียมค่าไว้ได้", monitor: "บอร์ดคุมไลน์อยู่ หน้านี้ดูสัญญาณอย่างเดียว", control: "ไม่มีบอร์ด: หน้านี้เป็นบอร์ดจำลอง หน้า OEE ทำตามปุ่มด้านล่าง" }[m];
-  if (m !== "monitor") { $("route").textContent = ""; prev = null; renderCtl(); if (m === "control") publish(); }
-  if (was && was !== "off") event(m === "monitor" ? "ESP32 online · monitor mode" : m === "control" ? "ESP32 offline · control mode" : "disconnected", "n");
+  $("mode-t").textContent = { off: "NOT LOGGED IN", monitor: "VIA BOARD · BOARD CONNECTED", control: "SIMULATOR · CONTROL VIA WEBSITE" }[m];
+  if (m !== "monitor") { $("route").textContent = ""; prev = null; renderCtl(); }
+  publish();
+  if (was && was !== "off") event(m === "monitor" ? "board connected · the dashboards follow the board" : m === "control" ? "simulator · the dashboards follow this page" : "logged out", "n");
 }
+$("use-board").addEventListener("click", () => { ctl.useBoard = ctl.useBoard ? 0 : 1; sendCtl(ctl.useBoard ? "connect board" : "disconnect board · simulator", "n"); setMode(); });
 
 setInterval(() => { $("s-rate").textContent = client?.connected ? rateCount : "—"; rateCount = 0; }, 1000);
 setInterval(() => {
@@ -610,7 +628,7 @@ function loadMqtt() {
   });
 }
 async function connect() {
-  if (client) { client.end(true); client = null; $("go").textContent = "Connect"; pill("off", "Not connected"); setMode(); return; }
+  if (client) { client.end(true); client = null; $("go").textContent = "Log in"; pill("off", "Not connected"); setMode(); return; }
   const url = $("url").value.trim(), user = $("user").value.trim(), pass = $("pass").value;
   if (!/^wss?:\/\//.test(url)) return pill("err", "broker must start with wss:// or ws://");
   remember.set("cnc-mqtt-url", url); remember.set("cnc-mqtt-user", user); remember.set("cnc-mqtt-pass", pass);
@@ -618,7 +636,7 @@ async function connect() {
   let lib; try { lib = await loadMqtt(); } catch (e) { return pill("err", e.message); }
   topics = { board: BASE + "/board", status: BASE + "/status", control: BASE + "/control" };
   client = lib.connect(url, { clientId: "dpx-control-" + ctl.id, reconnectPeriod: 2000, connectTimeout: 8000, clean: true, ...(user ? { username: user, password: pass } : {}) });
-  $("go").textContent = "Disconnect";
+  $("go").textContent = "Log out";
   client.on("connect", () => {
     pill("live", "Connected · MQTT");
     client.subscribe([topics.board, topics.status], { qos: 0 });
@@ -631,7 +649,7 @@ async function connect() {
     else if (t === topics.status && text !== boardStatus) { boardStatus = text; event("board " + text, text === "online" ? "g" : "n"); }
   });
   client.on("offline", () => { pill("quiet", "MQTT · reconnecting …"); setMode(); });
-  client.on("error", (e) => { pill("err", "MQTT: " + (e && e.message ? e.message : e)); if (/auth|not authorized/i.test(String(e && e.message))) { client.end(true); client = null; $("go").textContent = "Connect"; } });
+  client.on("error", (e) => { pill("err", "MQTT: " + (e && e.message ? e.message : e)); if (/auth|not authorized/i.test(String(e && e.message))) { client.end(true); client = null; $("go").textContent = "Log in"; } });
 }
 $("go").addEventListener("click", connect);
 $("pass").addEventListener("keydown", (e) => { if (e.key === "Enter" && !client) connect(); });
