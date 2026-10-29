@@ -30,18 +30,18 @@ EVENTS_GAP = max(5, int(os.environ.get("SHEETS_EVENTS_GAP_S", "10")))
 MAX_ROWS = max(10, int(os.environ.get("SHEETS_MAX_ROWS", "1000")))
 
 RATIOS = "availability, performance, quality, oee"
-STAMP = "YYYY-MM-DD-HH24-MI-SS"   # times in the sheet and in this log: 2026-10-30-14-05-09
+STAMP = "YYYY-MM-DD HH24:MI:SS:MS"   # every time in the sheet and in this log: 2026-10-30 14:05:09:123
 TABS = {
     "OEE_Daily": f"""
-        SELECT to_char(day, 'YYYY-MM-DD') AS date, line, machine, product, name, logged_min, run_min, stop_min, alarm_min,
+        SELECT to_char(day::timestamp, '{STAMP}') AS date, line, machine, product, name, logged_min, run_min, stop_min, alarm_min,
                parts, ideal_cycle_s, good, reject, {RATIOS}
         FROM oee_daily ORDER BY day, line, machine""",
     "OEE_Hourly": f"""
         SELECT to_char(period_start, '{STAMP}') AS hour, line, machine, product, name, logged_min, run_min,
                stop_min, alarm_min, parts, ideal_cycle_s, good, reject, {RATIOS}
         FROM oee('1 hour', date_trunc('day', now()) - make_interval(days => %s)) ORDER BY 1, 2, 3""",
-    "Products": """
-        SELECT to_char(day, 'YYYY-MM-DD') AS date, line, product, output, good, reject, quality
+    "Products": f"""
+        SELECT to_char(day::timestamp, '{STAMP}') AS date, line, product, output, good, reject, quality
         FROM product_daily ORDER BY day, line, product""",
     "Machines": "SELECT line, machine, name, ideal_cycle_s FROM machines ORDER BY line, machine",
     "Events": f"""

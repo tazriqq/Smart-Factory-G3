@@ -379,8 +379,9 @@ function fmtDur(ms) {
   if (s < 3600) return Math.floor(s / 60) + " min " + String(s % 60).padStart(2, "0") + " s";
   return Math.floor(s / 3600) + " h " + String(Math.floor(s / 60) % 60).padStart(2, "0") + " min";
 }
-// 2026-10-30-14-05-09 (local time)
-const clock = (d = new Date()) => [d.getFullYear(), d.getMonth() + 1, d.getDate(), d.getHours(), d.getMinutes(), d.getSeconds()].map((n) => String(n).padStart(2, "0")).join("-");
+// 2026-10-30 14:05:09:123 (local time), the same as the Google Sheet
+const clock = (d = new Date()) => { const p = (n, w = 2) => String(n).padStart(w, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}:${p(d.getMilliseconds(), 3)}`; };
 function event(text, cls = "") {
   const box = $("events");
   box.querySelector(".empty")?.remove();
