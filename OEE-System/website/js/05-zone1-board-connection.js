@@ -33,8 +33,9 @@ let lastData = 0;
 function setPill(state, text) { pill.dataset.state = state; pillText.textContent = text; }
 setInterval(() => {
   if (!conn) return;
-  const quiet = performance.now() - lastData > 2500;
-  setPill(quiet ? "quiet" : "on", "Connected · " + NAMES[conn.kind] + (quiet ? " · no data" : " · receiving"));
+  const now = performance.now(), quiet = now - lastData > 2500;
+  const via = !quiet && now - controlAt < 2500 && !window.__board.live ? " · control page" : quiet ? " · no data" : " · receiving";
+  setPill(quiet ? "quiet" : "on", "Connected · " + NAMES[conn.kind] + via);
 }, 500);
 const lastAdc = Array(COUNT).fill(null);
 
@@ -275,8 +276,15 @@ async function openMqtt(my) {
   });
   if (my !== gen) { client.end(true); return; }
   await new Promise((ok, fail) => client.subscribe(topic, { qos: 0 }, (e) => (e ? fail(e) : ok())));
+  // the control page (control.html) posts its knobs / switches here; it drives the line while no board is sending
+  const controlTopic = topic.replace(/\/[^/]+$/, "/control");
+  await new Promise((ok) => client.subscribe(controlTopic, { qos: 0 }, () => ok()));
   const feed = splitter();
-  client.on("message", (t, payload) => { if (my === gen && t === topic) feed(payload.toString() + "\n"); });
+  client.on("message", (t, payload) => {
+    if (my !== gen) return;
+    if (t === topic) feed(payload.toString() + "\n");
+    else if (t === controlTopic) { let m; try { m = JSON.parse(payload.toString()); } catch { return; } followControl(m); }
+  });
   client.on("offline", () => { if (my === gen && conn) setPill("error", "MQTT · reconnecting …"); });
   client.on("connect", () => { if (my === gen && conn) setPill("on", "Connected · MQTT"); });
   // the board listens on <line>/route/set next to its <line>/board topic
@@ -284,6 +292,25 @@ async function openMqtt(my) {
   connected("mqtt", async () => { client.end(true); },
     (route) => new Promise((ok, fail) => client.publish(routeTopic, route, { qos: 1 }, (e) => (e ? fail(e) : ok()))));
   say("Connected to the MQTT broker. Waiting for the ESP32 on topic “" + topic + "” …");
+}
+// the control page's state: {"pot":[..4],"run":[..4],"door":[..4],"al":0,"good":n,"rej":n,"id":"session"}
+// (retained, so it also arrives right after connecting). good / rej count up per control-page session.
+let lastControl = null, controlAt = 0;
+function followControl(m) {
+  if (window.__board.live || !Array.isArray(m.pot) || !Array.isArray(m.run)) return;   // the board wins
+  controlAt = lastData = performance.now();
+  m.pot.slice(0, COUNT).forEach((v, i) => { if (v >= 0 && v <= 1023) apply(i, v | 0); });
+  const loc = window.__board.local;
+  for (let i = 0; i < 4; i++) loc.run[i] = m.run[i] ? 1 : 0;
+  loc.al = !!m.al;
+  // a door can refuse to move for a moment (covers off, mid-animation): the page resends every 2 s
+  if (Array.isArray(m.door)) for (let i = 0; i < 4; i++) if (!!m.door[i] !== !!window.__door?.[i]) window.__line?.toggleDoor?.(i);
+  const q = lastControl && lastControl.id === m.id ? lastControl : null;
+  if (q) {
+    for (let k = 0; k < (m.good >>> 0) - (q.good >>> 0) && k < 100; k++) window.__qcPress?.("good");
+    for (let k = 0; k < (m.rej >>> 0) - (q.rej >>> 0) && k < 100; k++) window.__qcPress?.("reject");
+  }
+  lastControl = m;
 }
 navigator.serial?.addEventListener("disconnect", () => { if (conn && conn.kind === "usb") disconnect("The board was unplugged."); });
 async function openBle(my) {
@@ -315,12 +342,16 @@ button.addEventListener("click", async () => {
   }
 });
 syncSource();
-// opened from the board itself (http://<board>/, see esp32/build_web.py): it answers /data, so read it over Wi-Fi at once
+// opened from the board itself (http://<board>/, see esp32/build_web.py): it answers /data, so read it over Wi-Fi at once;
+// otherwise, with an MQTT password remembered, connect by MQTT (the board, or the control page, comes in that way)
+const autoMqtt = () => { if (!conn && sourceSel.value === "mqtt" && mqttPass.value) button.click(); };
+if (location.protocol === "https:" && !remember.get("cnc-knob-source")) { sourceSel.value = "mqtt"; syncSource(); }
 if (location.protocol === "http:") {
   fetch("/data", { cache: "no-store" }).then((r) => (r.ok ? r.text() : "")).then((t) => {
-    if (!t.trim().startsWith("{") || conn) return;
+    if (!t.trim().startsWith("{")) return autoMqtt();
+    if (conn) return;
     sourceSel.value = "wifi"; addrInput.value = location.host; syncSource();
     button.click();
-  }).catch(() => {});
-}
+  }).catch(autoMqtt);
+} else autoMqtt();
 })();

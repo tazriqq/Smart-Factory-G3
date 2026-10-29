@@ -1,0 +1,436 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Line Control</title>
+<!-- control.html - the line's controls on their own page (control.<domain>, or /control.html on the server).
+     ESP32 offline: this page is the board. Knobs, run switches, doors, alarm and QC go to MQTT <line>/control
+     (retained), and the dashboard (index.html) drives its simulated line from them.
+     ESP32 online: this page only shows what the board sends (<line>/board), like a signal monitor. -->
+<style>
+:root{
+  --page:#f2f2ef;--card:#fbfbfa;--text:#57575a;--strong:#18181a;--muted:#8c8c90;--line:#dcdcd9;--faint:#ededea;
+  --green:#30a46c;--green-bg:#e6f4ec;--red:#e5484d;--red-bg:#fdecec;--amber:#d9a12a;--amber-bg:#fbf3e0;--blue:#3e63dd;
+  --pa:#2a78d6;--pb:#b4579f;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  --shadow:0 0 0 1px #0000000f,0 1px 2px #0000000a;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --page:#0b0b0b;--card:#141414;--text:#a3a3a3;--strong:#ececec;--muted:#6e6e6e;--line:#2a2a2a;--faint:#1c1c1c;
+  --green:#5fd394;--green-bg:#10241a;--red:#ff6b6b;--red-bg:#2a1414;--amber:#e8b34a;--amber-bg:#2a2210;--blue:#6b9bff;
+  --shadow:0 0 0 1px #ffffff12;color-scheme:dark}}
+:root[data-theme="dark"]{
+  --page:#0b0b0b;--card:#141414;--text:#a3a3a3;--strong:#ececec;--muted:#6e6e6e;--line:#2a2a2a;--faint:#1c1c1c;
+  --green:#5fd394;--green-bg:#10241a;--red:#ff6b6b;--red-bg:#2a1414;--amber:#e8b34a;--amber-bg:#2a2210;--blue:#6b9bff;
+  --shadow:0 0 0 1px #ffffff12;color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);color:var(--text);font:14px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased;padding:0 16px}
+main{max-width:1100px;margin:0 auto;padding:28px 0 60px;display:grid;gap:14px}
+header{display:flex;flex-wrap:wrap;align-items:flex-end;gap:6px 16px}
+h1{margin:0;font-size:19px;font-weight:600;color:var(--strong)}
+.sub{margin:2px 0 0;color:var(--muted);font-size:13px}
+header a{margin-left:auto;font:12px var(--mono);color:var(--blue)}
+.card{background:var(--card);box-shadow:var(--shadow);border-radius:10px;padding:14px 16px}
+.k{font:500 10.5px/1.2 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+
+/* connection */
+.conn{display:flex;flex-wrap:wrap;gap:8px 10px;align-items:center}
+button,input{font:inherit}
+.btn{appearance:none;border:0;border-radius:7px;padding:7px 12px;background:var(--faint);color:var(--strong);cursor:pointer;font:500 13px var(--mono);box-shadow:inset 0 0 0 1px var(--line)}
+.btn:hover{box-shadow:inset 0 0 0 1px var(--muted)}
+.btn[aria-pressed="true"]{background:var(--strong);color:var(--card);box-shadow:none}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn:focus-visible,input:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+.in{padding:7px 9px;border-radius:7px;border:0;box-shadow:inset 0 0 0 1px var(--line);background:var(--card);color:var(--strong);font:13px var(--mono);min-width:0}
+#url{flex:1 1 240px}#user{width:90px}#pass{width:130px}
+.pill{display:inline-flex;align-items:center;gap:7px;padding:4px 10px;border-radius:99px;font:12px var(--mono);box-shadow:inset 0 0 0 1px var(--line);color:var(--text);white-space:nowrap}
+.pill i{width:8px;height:8px;border-radius:50%;background:var(--muted)}
+.pill[data-s="live"] i{background:var(--green)}
+.pill[data-s="busy"] i{background:var(--amber);animation:blink 1s steps(2,end) infinite}
+.pill[data-s="quiet"] i{background:var(--amber)}
+.pill[data-s="err"] i{background:var(--red)}
+@keyframes blink{50%{opacity:.25}}
+.grow{flex:1}
+.stats{display:flex;flex-wrap:wrap;gap:4px 16px;font:12px var(--mono);color:var(--muted);margin-top:10px}
+.stats b{color:var(--strong);font-weight:500}
+.hint{margin:8px 0 0;font-size:12.5px;color:var(--muted)}
+
+/* mode */
+.mode{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;padding:10px 16px;border-radius:10px;background:var(--card);box-shadow:var(--shadow)}
+.mode b{font:600 13px var(--mono);letter-spacing:.06em;color:var(--strong)}
+.mode span{font-size:12.5px;color:var(--muted)}
+.mode[data-m="control"]{box-shadow:0 0 0 1.5px var(--blue)}
+.mode[data-m="control"] b{color:var(--blue)}
+.mode[data-m="monitor"]{box-shadow:0 0 0 1.5px var(--green)}
+.mode[data-m="monitor"] b{color:var(--green)}
+.route{margin-left:auto;font:12px var(--mono);color:var(--muted)}
+.route i{display:inline-grid;place-items:center;min-width:16px;height:16px;padding:0 4px;margin:0 4px 0 8px;font:600 10px var(--mono);font-style:normal;color:#fff;background:var(--pa)}
+.route i.b{background:var(--pb)}
+body:not([data-mode="control"]) .ctl{display:none!important}
+body[data-mode="control"] .mon{display:none!important}
+
+/* alarm */
+.alarm{display:flex;align-items:center;gap:12px;padding:12px 16px;border-radius:10px;background:var(--card);box-shadow:var(--shadow)}
+.alarm .lamp{width:16px;height:16px;border-radius:50%;background:var(--faint);box-shadow:inset 0 0 0 1px var(--line);flex:none}
+.alarm b{font:600 15px var(--mono);color:var(--strong);letter-spacing:.04em}
+.alarm[data-on="1"]{background:var(--red-bg);box-shadow:0 0 0 1.5px var(--red)}
+.alarm[data-on="1"] .lamp{background:var(--red);box-shadow:0 0 12px var(--red);animation:blink .8s steps(2,end) infinite}
+.alarm[data-on="1"] b{color:var(--red)}
+.alarm .pin{margin-left:auto;font:11px var(--mono);color:var(--muted)}
+
+/* machines */
+.machines{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+@media (max-width:900px){.machines{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:520px){.machines{grid-template-columns:1fr}}
+.m{display:grid;gap:12px;align-content:start}
+.m-h{display:flex;align-items:baseline;gap:8px}
+.m-h b{font:600 13px var(--mono);color:var(--strong)}
+.m-h span{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.state{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;background:var(--faint);font:600 13px var(--mono);color:var(--muted);letter-spacing:.06em}
+.state i{width:10px;height:10px;border-radius:50%;background:var(--muted);flex:none}
+.state small{margin-left:auto;font-weight:400;letter-spacing:0;font-size:11px}
+.state[data-s="run"]{background:var(--green-bg);color:var(--green)}
+.state[data-s="run"] i{background:var(--green);box-shadow:0 0 8px var(--green)}
+.state[data-s="held"]{background:var(--red-bg);color:var(--red)}
+.state[data-s="held"] i{background:var(--red)}
+.state[data-s="door"]{background:var(--amber-bg);color:var(--amber)}
+.state[data-s="door"] i{background:var(--amber)}
+.count{display:flex;align-items:baseline;gap:8px}
+.count b{font:600 30px/1 var(--mono);color:var(--strong);font-variant-numeric:tabular-nums;transition:color .4s}
+.count b.bump{color:var(--blue);transition:none}
+.count span{font:12px var(--mono);color:var(--muted)}
+.bar{height:6px;border-radius:3px;background:var(--faint);overflow:hidden;position:relative}
+.bar i{position:absolute;inset:0 auto 0 0;width:0;background:var(--strong);border-radius:3px;transition:width .12s}
+.bar u{position:absolute;top:-2px;bottom:-2px;left:50%;width:1px;background:var(--muted)}
+.row{display:flex;justify-content:space-between;gap:8px;font:12px var(--mono);color:var(--muted)}
+.row b{color:var(--strong);font-weight:500}
+.pins{font:10.5px var(--mono);color:var(--muted);border-top:1px solid var(--faint);padding-top:8px}
+.sw{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.sw .btn{width:100%}
+input[type=range]{width:100%;margin:6px 0;accent-color:var(--strong)}
+
+/* QC */
+.qc{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+@media (max-width:620px){.qc{grid-template-columns:1fr}}
+.qc .count b{font-size:26px}
+.qc .good b.bump{color:var(--green)}
+.qc .rej b.bump{color:var(--red)}
+.qc .btn.ctl{margin-top:10px;width:100%;padding:12px}
+.qc .good .btn{color:var(--green)}.qc .rej .btn{color:var(--red)}
+
+/* logs */
+.logs{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px}
+@media (max-width:820px){.logs{grid-template-columns:1fr}}
+.log-h{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.log-h .btn{padding:4px 9px;font-size:12px}
+.events,.raw{height:260px;overflow:auto;margin:0;font:12px/1.55 var(--mono);color:var(--text);background:var(--page);border-radius:7px;padding:8px 10px}
+.events div{display:flex;gap:10px;white-space:nowrap}
+.events time{color:var(--muted)}
+.events .g{color:var(--green)}.events .r{color:var(--red)}.events .b{color:var(--blue)}.events .n{color:var(--muted)}
+.raw{white-space:pre;color:var(--muted)}
+.empty{color:var(--muted)}
+</style>
+</head>
+<body data-mode="off">
+<main>
+  <header>
+    <div>
+      <h1>Line control</h1>
+      <p class="sub">ESP32 offline: ควบคุมไลน์จากหน้านี้ · ESP32 online: ดูสัญญาณทุกตัวที่บอร์ดส่งเข้ามา</p>
+    </div>
+    <a id="dash" href="/">OEE dashboard ↗</a>
+  </header>
+
+  <section class="card" aria-label="Connection">
+    <div class="conn">
+      <input class="in" id="url" type="text" spellcheck="false" autocomplete="off" aria-label="MQTT broker WebSocket address">
+      <input class="in" id="user" type="text" value="web" spellcheck="false" autocomplete="off" aria-label="MQTT user">
+      <input class="in" id="pass" type="password" placeholder="password" autocomplete="off" aria-label="MQTT password">
+      <button class="btn" id="go" type="button">Connect</button>
+      <span class="grow"></span>
+      <span class="pill" id="pill" data-s="off" role="status"><i></i><span>Not connected</span></span>
+    </div>
+    <div class="stats">
+      <span>lines/s <b id="s-rate">—</b></span>
+      <span>last line <b id="s-age">—</b></span>
+      <span>board up <b id="s-up">—</b></span>
+      <span>restarts seen <b id="s-rst">0</b></span>
+    </div>
+    <p class="hint">ใช้ user <b>web</b> กับรหัส <b>MQTT_WEB_PASS</b> (ใน server/.env) เหมือนหน้า dashboard · เบราว์เซอร์จำไว้ให้</p>
+  </section>
+
+  <section class="mode" id="mode" data-m="off" aria-live="polite">
+    <b id="mode-t">NOT CONNECTED</b><span id="mode-s">ต่อ MQTT ก่อน</span>
+    <span class="route" id="route"></span>
+  </section>
+
+  <section class="alarm" id="alarm" data-on="0" aria-live="polite">
+    <span class="lamp"></span><b id="alarm-t">No alarm</b>
+    <button class="btn ctl" id="al-btn" type="button" aria-pressed="false">Alarm / E-stop</button>
+    <span class="pin">GPIO 13 · latching switch · on-board LED GPIO 2</span>
+  </section>
+
+  <section class="machines" id="machines" aria-label="Machines"></section>
+
+  <section class="qc" aria-label="Quality check">
+    <div class="card good"><div class="k">QC · Good</div><div class="count"><b id="q-good">—</b><span>presses</span></div>
+      <button class="btn ctl" id="q-good-btn" type="button">✓ GOOD</button><div class="pins">GPIO 16 · tactile</div></div>
+    <div class="card rej"><div class="k">QC · Reject</div><div class="count"><b id="q-rej">—</b><span>presses</span></div>
+      <button class="btn ctl" id="q-rej-btn" type="button">✕ REJECT</button><div class="pins">GPIO 4 · tactile</div></div>
+    <div class="card"><div class="k">All parts · line</div><div class="count"><b id="q-all">—</b><span class="mon">finished by 4 machines</span><span class="ctl">made on the dashboard</span></div><div class="pins" id="q-yield">yield —</div></div>
+  </section>
+
+  <section class="logs">
+    <div class="card">
+      <div class="log-h"><span class="k">Events</span><span class="grow"></span><button class="btn" id="ev-clear" type="button">Clear</button></div>
+      <div class="events" id="events" aria-live="off"><div class="empty">switch changes, parts, alarm and board notes appear here</div></div>
+    </div>
+    <div class="card">
+      <div class="log-h"><span class="k">Raw lines</span><span class="grow"></span><button class="btn" id="raw-pause" type="button" aria-pressed="false">Pause</button></div>
+      <pre class="raw" id="raw"><span class="empty">the last 40 messages</span></pre>
+    </div>
+  </section>
+</main>
+
+<script>
+"use strict";
+// pins as wired on the board (esp32/SmartFactoryBoard_MQTT/SmartFactoryBoard_MQTT.ino)
+const MACHINES = [
+  { no: "01", name: "Okuma LNC-8",          run: 25, door: 23, pot: 32 },
+  { no: "02", name: "GFIR CK0620",          run: 26, door: 19, pot: 33 },
+  { no: "03", name: "GFIR CK0620",          run: 27, door: 18, pot: 34 },
+  { no: "04", name: "Okuma GENOS L250E",    run: 14, door: 17, pot: 35 },
+];
+const BOARD_QUIET_MS = 3000;   // no board line for this long = the ESP32 is offline, this page takes over
+const $ = (id) => document.getElementById(id);
+const remember = { get(k) { try { return localStorage.getItem(k); } catch { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch {} } };
+
+// the dashboard: oee.<domain> next to control.<domain>, or the server's own page
+if (/^control\./.test(location.hostname)) $("dash").href = location.protocol + "//" + location.hostname.replace(/^control\./, "oee.") + "/";
+
+/* ---------- machine cards ---------- */
+$("machines").innerHTML = MACHINES.map((m, i) => `
+  <div class="card m" data-i="${i}">
+    <div class="m-h"><b>M${i + 1}</b><span>${m.no} ${m.name}</span></div>
+    <div class="state" data-s="off"><i></i><span data-f="st">—</span><small data-f="since"></small></div>
+    <div class="sw ctl">
+      <button class="btn" data-f="run" type="button" aria-pressed="true">RUN</button>
+      <button class="btn" data-f="door" type="button" aria-pressed="false">🚪 เปิดฝา</button>
+    </div>
+    <div class="mon"><div class="k">parts finished</div>
+      <div class="count"><b data-f="cnt">—</b><span data-f="gap"></span></div></div>
+    <div><div class="row"><span class="k">knob → speed</span><span><b data-f="spd">—</b></span></div>
+      <input class="ctl" data-f="slider" type="range" min="0" max="200" step="5" value="100" aria-label="M${i + 1} speed %">
+      <div class="bar mon" style="margin:6px 0"><i data-f="bar"></i><u title="100 %"></u></div>
+      <div class="row"><span>raw <b data-f="raw">—</b> / 1023</span><span>0 · 100 · 200 %</span></div></div>
+    <div class="pins">run GPIO ${m.run} · door GPIO ${m.door} · knob GPIO ${m.pot}</div>
+  </div>`).join("");
+const cards = [...document.querySelectorAll(".m")].map((c) => {
+  const f = {}; c.querySelectorAll("[data-f]").forEach((e) => (f[e.dataset.f] = e));
+  return { el: c, state: c.querySelector(".state"), ...f };
+});
+
+/* ---------- helpers ---------- */
+function fmtDur(ms) {
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 60) return s + " s";
+  if (s < 3600) return Math.floor(s / 60) + " min " + String(s % 60).padStart(2, "0") + " s";
+  return Math.floor(s / 3600) + " h " + String(Math.floor(s / 60) % 60).padStart(2, "0") + " min";
+}
+const clock = () => new Date().toLocaleTimeString("en-GB", { hour12: false });
+function event(text, cls = "") {
+  const box = $("events");
+  box.querySelector(".empty")?.remove();
+  const d = document.createElement("div");
+  d.innerHTML = `<time>${clock()}</time><span class="${cls}"></span>`;
+  d.lastChild.textContent = text;
+  box.prepend(d);
+  while (box.children.length > 300) box.lastChild.remove();
+}
+function bump(el) { el.classList.add("bump"); clearTimeout(el._t); el._t = setTimeout(() => el.classList.remove("bump"), 60); }
+const rawLines = []; let rawPaused = false;
+function raw(text) {
+  if (rawPaused) return;
+  rawLines.push(text); if (rawLines.length > 40) rawLines.shift();
+  $("raw").textContent = rawLines.join("\n"); $("raw").scrollTop = 1e9;
+}
+// speed % (0..200, 5 % steps) <-> knob 0..1023, the same mapping as the board and the dashboard
+const potOf = (pct) => Math.round((pct / 200) * 1023);
+const pctOf = (pot) => Math.round((pot / 1023) * 40) * 5;
+function showState(c, i, run, door, al, pct, now) {
+  const s = al ? (run ? "held" : "off") : door ? "door" : run && pct > 0 ? "run" : "off";
+  if (c.state.dataset.s !== s) { c.state.dataset.s = s; since[i] = now; }
+  c.st.textContent = s === "run" ? "RUN" : s === "held" ? "STOP · ALARM" : s === "door" ? "DOOR OPEN" : run ? "STOP · 0 %" : "STOP";
+}
+function showAlarm(al) {
+  $("alarm").dataset.on = al ? "1" : "0";
+  $("alarm-t").textContent = al ? "ALARM · ทุกเครื่องหยุด" : "No alarm";
+  $("al-btn").setAttribute("aria-pressed", String(al));
+}
+function showQc(good, rej, all) {
+  $("q-good").textContent = good; $("q-rej").textContent = rej; $("q-all").textContent = all;
+  $("q-yield").textContent = good + rej ? `QC yield ${Math.round((good / (good + rej)) * 100)} % (good ÷ good + reject)` : "QC yield —";
+}
+const since = [0, 0, 0, 0];
+
+/* ---------- monitor: what the board sends ---------- */
+let prev = null, lines = 0, rateCount = 0, lastBoard = 0, restarts = 0;
+const lastPart = [0, 0, 0, 0], partGap = [0, 0, 0, 0];
+function onBoard(text) {
+  raw(text);
+  let m; try { m = JSON.parse(text); } catch { return; }
+  if (!Array.isArray(m.run) || !Array.isArray(m.cnt)) return;
+  const now = performance.now();
+  lines++; rateCount++; lastBoard = now;
+  setMode();
+  if (prev && typeof m.ms === "number" && typeof prev.ms === "number" && m.ms < prev.ms) {
+    restarts++; $("s-rst").textContent = restarts; event("board restarted (counters back to 0)", "r"); prev = null;
+  }
+  const al = !!m.al;
+  if (!prev || !!prev.al !== al) { showAlarm(al); if (prev) event(al ? "ALARM ON" : "alarm cleared", al ? "r" : "g"); }
+  const hasPot = Array.isArray(m.pot);
+  MACHINES.forEach((mc, i) => {
+    const c = cards[i], run = !!m.run[i], door = !!(m.door && m.door[i]), cnt = m.cnt[i] >>> 0;
+    const pot = hasPot ? Math.max(0, Math.min(1023, m.pot[i] | 0)) : 512, pct = pctOf(pot);
+    if (prev && !!prev.run[i] !== run) event(`M${i + 1} ${mc.no} run switch ${run ? "ON" : "OFF"}`, run ? "g" : "");
+    if (prev && prev.door && !!prev.door[i] !== door) event(`M${i + 1} ${mc.no} door ${door ? "open" : "closed"}`, door ? "" : "g");
+    showState(c, i, run, door, al, pct, now);
+    if (prev && cnt > (prev.cnt[i] >>> 0)) {
+      const add = cnt - (prev.cnt[i] >>> 0);
+      if (lastPart[i]) partGap[i] = now - lastPart[i];
+      lastPart[i] = now; bump(c.cnt);
+      event(`M${i + 1} ${mc.no} part finished${add > 1 ? " ×" + add : ""} → ${cnt}`, "b");
+    }
+    c.cnt.textContent = cnt;
+    c.gap.textContent = lastPart[i] ? (partGap[i] ? "every " + (partGap[i] / 1000).toFixed(1) + " s" : "") + " · last " + fmtDur(now - lastPart[i]) + " ago" : "";
+    c.raw.textContent = hasPot ? pot : "—"; c.spd.textContent = hasPot ? pct + " %" : "no pots"; c.bar.style.width = (pot / 1023) * 100 + "%";
+  });
+  const good = m.good >>> 0, rej = m.rej >>> 0, all = m.cnt.reduce((n, v) => n + (v >>> 0), 0);
+  if (prev && good > prev.good) { bump($("q-good")); event(`QC good → ${good}`, "g"); }
+  if (prev && rej > prev.rej) { bump($("q-rej")); event(`QC reject → ${rej}`, "r"); }
+  showQc(good, rej, all);
+  if (typeof m.route === "string") {
+    if (prev && prev.route !== m.route) event("route → " + m.route, "b");
+    const [a, b] = m.route.split("-"), out = m.out || [];
+    $("route").innerHTML = (a ? `<i>A</i>${[...a].map((n) => "0" + n).join("→")} · ${out[0] ?? 0} out` : "") + (b ? `<i class="b">B</i>${[...b].map((n) => "0" + n).join("→")} · ${out[1] ?? 0} out` : "");
+  }
+  if (typeof m.ms === "number") $("s-up").textContent = fmtDur(m.ms);
+  prev = m;
+}
+
+/* ---------- control: this page is the board ---------- */
+// what the dashboard follows; QC presses are counters, so it can tell new presses from a resent state
+const ctl = { pot: [512, 512, 512, 512], run: [1, 1, 1, 1], door: [0, 0, 0, 0], al: 0, good: 0, rej: 0, id: Math.random().toString(36).slice(2, 10) };
+try { Object.assign(ctl, JSON.parse(remember.get("ctl-state")) || {}, { good: 0, rej: 0, id: ctl.id }); } catch {}
+let sendTimer = 0;
+function sendCtl(note, cls) {
+  if (note) event(note, cls);
+  remember.set("ctl-state", JSON.stringify({ pot: ctl.pot, run: ctl.run, door: ctl.door, al: ctl.al }));
+  renderCtl();
+  clearTimeout(sendTimer);
+  sendTimer = setTimeout(publish, 80);     // a dragged slider sends at most ~12 times a second
+}
+function publish() {
+  if (!client || !client.connected || mode() !== "control") return;
+  const text = JSON.stringify({ ...ctl, ms: Math.round(performance.now()) });
+  client.publish(topics.control, text, { qos: 0, retain: true });
+  raw("→ " + text);
+}
+function renderCtl() {
+  const now = performance.now();
+  showAlarm(!!ctl.al);
+  MACHINES.forEach((_, i) => {
+    const c = cards[i], pct = pctOf(ctl.pot[i]);
+    c.run.setAttribute("aria-pressed", String(!!ctl.run[i])); c.run.textContent = ctl.run[i] ? "RUN" : "STOP";
+    c.door.setAttribute("aria-pressed", String(!!ctl.door[i])); c.door.textContent = ctl.door[i] ? "🚪 ปิดฝา" : "🚪 เปิดฝา";
+    if (+c.slider.value !== pct) c.slider.value = pct;
+    c.spd.textContent = pct + " %"; c.raw.textContent = ctl.pot[i];
+    showState(c, i, !!ctl.run[i], !!ctl.door[i], !!ctl.al, pct, now);
+  });
+  showQc(ctl.good, ctl.rej, "—");
+}
+cards.forEach((c, i) => {
+  c.run.addEventListener("click", () => { ctl.run[i] = ctl.run[i] ? 0 : 1; sendCtl(`M${i + 1} run switch ${ctl.run[i] ? "ON" : "OFF"}`, ctl.run[i] ? "g" : ""); });
+  c.door.addEventListener("click", () => { ctl.door[i] = ctl.door[i] ? 0 : 1; sendCtl(`M${i + 1} door ${ctl.door[i] ? "open" : "closed"}`, ctl.door[i] ? "" : "g"); });
+  c.slider.addEventListener("input", () => { ctl.pot[i] = potOf(+c.slider.value); sendCtl(); });
+  c.slider.addEventListener("change", () => event(`M${i + 1} speed ${c.slider.value} %`, "n"));
+});
+$("al-btn").addEventListener("click", () => { ctl.al = ctl.al ? 0 : 1; sendCtl(ctl.al ? "ALARM ON" : "alarm cleared", ctl.al ? "r" : "g"); });
+$("q-good-btn").addEventListener("click", () => { ctl.good++; bump($("q-good")); sendCtl(`QC good → ${ctl.good}`, "g"); });
+$("q-rej-btn").addEventListener("click", () => { ctl.rej++; bump($("q-rej")); sendCtl(`QC reject → ${ctl.rej}`, "r"); });
+
+/* ---------- mode: monitor while the ESP32 is sending, control otherwise ---------- */
+let boardStatus = "";
+const mode = () => (!client || !client.connected ? "off" : lastBoard && performance.now() - lastBoard < BOARD_QUIET_MS ? "monitor" : "control");
+function setMode() {
+  const m = mode();
+  if (document.body.dataset.mode === m) return;
+  const was = document.body.dataset.mode;
+  document.body.dataset.mode = m;
+  $("mode").dataset.m = m;
+  $("mode-t").textContent = { off: "NOT CONNECTED", monitor: "MONITOR · ESP32 ONLINE", control: "CONTROL · ESP32 OFFLINE" }[m];
+  $("mode-s").textContent = { off: "ต่อ MQTT ก่อน", monitor: "บอร์ดคุมไลน์อยู่ หน้านี้ดูสัญญาณอย่างเดียว", control: "หน้านี้คุมไลน์จำลองบน dashboard แทนบอร์ด" }[m];
+  if (m === "control") { $("route").textContent = ""; prev = null; renderCtl(); publish(); }
+  if (was && was !== "off") event(m === "monitor" ? "ESP32 online · monitor mode" : m === "control" ? "ESP32 offline · control mode" : "disconnected", "n");
+}
+
+setInterval(() => { $("s-rate").textContent = client?.connected ? rateCount : "—"; rateCount = 0; }, 1000);
+setInterval(() => {
+  const now = performance.now();
+  $("s-age").textContent = lastBoard && client?.connected ? Math.round(now - lastBoard) + " ms" : "—";
+  setMode();
+  MACHINES.forEach((_, i) => { cards[i].since.textContent = since[i] ? fmtDur(now - since[i]) : ""; });
+}, 250);
+setInterval(publish, 2000);   // keep the retained state fresh; the dashboard retries a door it couldn't move yet
+
+/* ---------- MQTT ---------- */
+let client = null, topics = null;
+function pill(s, text) { $("pill").dataset.s = s; $("pill").lastChild.textContent = text; }
+const BASE = "group3/dpx/line1";
+$("url").value = remember.get("cnc-mqtt-url") || (location.protocol === "https:" ? `wss://${location.host}/mqtt` : `ws://${location.hostname || "192.168.1.107"}:9001`);
+$("user").value = remember.get("cnc-mqtt-user") || "web";
+$("pass").value = remember.get("cnc-mqtt-pass") || "";
+function loadMqtt() {
+  if (window.mqtt) return Promise.resolve(window.mqtt);
+  return new Promise((ok, fail) => {
+    const s = document.createElement("script");
+    s.src = "js/vendor/mqtt.min.js";
+    s.onload = () => ok(window.mqtt);
+    s.onerror = () => fail(new Error("can't load js/vendor/mqtt.min.js"));
+    document.head.appendChild(s);
+  });
+}
+async function connect() {
+  if (client) { client.end(true); client = null; $("go").textContent = "Connect"; pill("off", "Not connected"); setMode(); return; }
+  const url = $("url").value.trim(), user = $("user").value.trim(), pass = $("pass").value;
+  if (!/^wss?:\/\//.test(url)) return pill("err", "broker must start with wss:// or ws://");
+  remember.set("cnc-mqtt-url", url); remember.set("cnc-mqtt-user", user); remember.set("cnc-mqtt-pass", pass);
+  pill("busy", "Connecting …");
+  let lib; try { lib = await loadMqtt(); } catch (e) { return pill("err", e.message); }
+  topics = { board: BASE + "/board", status: BASE + "/status", control: BASE + "/control" };
+  client = lib.connect(url, { clientId: "dpx-control-" + ctl.id, reconnectPeriod: 2000, connectTimeout: 8000, clean: true, ...(user ? { username: user, password: pass } : {}) });
+  $("go").textContent = "Disconnect";
+  client.on("connect", () => {
+    pill("live", "Connected · MQTT");
+    client.subscribe([topics.board, topics.status], { qos: 0 });
+    event("connected to " + url, "n");
+    setMode(); publish();
+  });
+  client.on("message", (t, payload) => {
+    const text = payload.toString();
+    if (t === topics.board) onBoard(text);
+    else if (t === topics.status && text !== boardStatus) { boardStatus = text; event("board " + text, text === "online" ? "g" : "n"); }
+  });
+  client.on("offline", () => { pill("quiet", "MQTT · reconnecting …"); setMode(); });
+  client.on("error", (e) => { pill("err", "MQTT: " + (e && e.message ? e.message : e)); if (/auth|not authorized/i.test(String(e && e.message))) { client.end(true); client = null; $("go").textContent = "Connect"; } });
+}
+$("go").addEventListener("click", connect);
+$("pass").addEventListener("keydown", (e) => { if (e.key === "Enter" && !client) connect(); });
+$("ev-clear").addEventListener("click", () => { $("events").innerHTML = ""; });
+$("raw-pause").addEventListener("click", (e) => { rawPaused = !rawPaused; e.target.setAttribute("aria-pressed", String(rawPaused)); e.target.textContent = rawPaused ? "Resume" : "Pause"; });
+renderCtl();
+if ($("pass").value) connect();
+</script>
+</body>
+</html>

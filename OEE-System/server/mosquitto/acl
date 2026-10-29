@@ -8,3 +8,5 @@ topic readwrite group3/dpx/#
 user web
 topic read group3/dpx/#
 topic write group3/dpx/+/route/set
+# ...and post the control page's knobs / switches (website/control.html), used only while the board is offline
+topic write group3/dpx/+/control

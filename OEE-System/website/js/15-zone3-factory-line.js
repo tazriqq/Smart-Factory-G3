@@ -1001,8 +1001,12 @@ const setKnobs = (hidden) => {
   knobsBtn.title = hidden ? 'Show left panel' : 'Hide left panel'; knobsBtn.setAttribute('aria-label', knobsBtn.title);
   try { localStorage.setItem('knobs-hidden', hidden ? '1' : ''); } catch {}
 };
-knobsBtn.addEventListener('click', () => setKnobs(!document.body.classList.contains('knobs-hidden')));
-try { if (localStorage.getItem('knobs-hidden')) setKnobs(true); } catch {}
+// the left panel's controls moved to their own page (control.html): the panel stays hidden (its knobs and
+// switches still take the control page's values), and its button opens that page
+setKnobs(true);
+const controlUrl = /^oee\./.test(location.hostname) ? location.protocol + '//' + location.hostname.replace(/^oee\./, 'control.') + '/' : 'control.html';
+const controlLink = Object.assign(document.createElement('a'), { className: 'lb-btn knobs-toggle', href: controlUrl, target: '_blank', rel: 'noopener', textContent: 'Control ↗', title: 'Line controls (knobs, run switches, doors, alarm, QC) on their own page' });
+knobsBtn.replaceWith(controlLink);
 addEventListener('keydown', (e) => {
   if (e.target.closest('input, select, textarea') || e.ctrlKey || e.metaKey || e.altKey) return;
   if (e.key === 'Escape' && fullOf()) setFull(null);

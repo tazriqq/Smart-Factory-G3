@@ -365,3 +365,4 @@ body[data-theme="dark"] .lf-andon{--an-pole:#55555a;--an-cap:#2a2a2e}
 .rt-f{display:flex;align-items:center;gap:6px}
 .rt-f .lb-btn:disabled{opacity:.45;cursor:default}
 .rt-msg{color:var(--anatomy-muted);font-size:9px;white-space:normal;max-width:220px}
+a.knobs-toggle{font-size:11px;text-decoration:none;margin-right:0}

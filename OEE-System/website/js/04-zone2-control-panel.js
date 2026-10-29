@@ -156,6 +156,8 @@ const line = lineCard && (() => {
   });
   return l;
 })();
+// the control page (control.html, through MQTT) presses QC Good / Reject here when no board is connected
+window.__qcPress = (what) => act(what);
 function act(what) {
   const b = board();
   if (!b) return;

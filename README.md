@@ -21,6 +21,7 @@ flowchart LR
     end
 
     browser["เบราว์เซอร์ใน Wi-Fi<br/>Chrome / Edge"]
+    ctlpage["หน้า control<br/>control.html"]
     remote["เบราว์เซอร์ที่ไหนก็ได้<br/>https://oee.&lt;domain&gt;"]
     cloud["Cloudflare<br/>(+ Access: login ด้วยอีเมล)"]
     gs["Google Sheet<br/>(Apps Script)"]
@@ -28,6 +29,8 @@ flowchart LR
 
     hw -- "MQTT: board · events · minutes" --> mq
     mq -- "route/set (เส้นทางผลิต)" --> hw
+    ctlpage -- "control (ตอน ESP32 offline)" --> mq
+    mq -- "board (ตอน ESP32 online: ดูอย่างเดียว)" --> ctlpage
     mq --> tg
     tg --> pg
     tg --> ifx
@@ -51,6 +54,7 @@ flowchart LR
 - **sheets-sync** อ่านสรุป OEE จาก PostgreSQL ส่งขึ้น **Google Sheet**
 - **Claude** อ่าน database ผ่าน MCP ด้วย user `reader` (อ่านอย่างเดียว)
 - **บอร์ดเปิดหน้าเว็บเองได้** ที่ `http://192.168.1.200` (หน้าเว็บฝังอยู่ในโค้ดบอร์ด) และหน้าเว็บต่อบอร์ดตรงๆ ได้ด้วย USB / Bluetooth — ใช้ได้แม้ server ปิด แต่จะไม่มีการบันทึกลง database
+- **หน้า control** (`control.html`, `control.<domain>`): ปุ่มหมุน / run / ฝา / alarm / GOOD / REJECT ย้ายมาอยู่หน้านี้ — ESP32 offline: หน้านี้คุมไลน์จำลองบน dashboard ผ่าน MQTT topic `control` · ESP32 online: เป็นหน้า monitor ดูสัญญาณจากบอร์ด
 - **cloudflared** เปิดหน้าเว็บ + Grafana ให้เข้าจากที่ไหนก็ได้ผ่าน Cloudflare Tunnel (nginx ส่ง `/mqtt` ต่อให้ Mosquitto จึงใช้ address เดียว)
 
 คู่มือนี้คือ **ขั้นตอนทั้งหมดหลัง clone ไปใช้บนเครื่องใหม่** — รายละเอียดเชิงลึก (ตาราง database, สูตร OEE, topic MQTT, โครงหน้าเว็บ) อยู่ใน [`OEE-System/README.md`](OEE-System/README.md)
@@ -204,8 +208,9 @@ server ส่งสรุป OEE ขึ้นชีตทุก 15 นาที 
 | อะไร | ที่อยู่ | login |
 |---|---|---|
 | หน้าเว็บ | `http://<SERVER_IP>:8080` | Board via **MQTT** → user `web` · password = `MQTT_WEB_PASS` → **Connect** |
+| หน้า control | `http://<SERVER_IP>:8080/control.html` | user `web` + `MQTT_WEB_PASS` (เหมือนหน้าเว็บ) |
 | หน้าเว็บจากบอร์ด | `http://192.168.1.200` | ไม่ต้อง login — ต่อบอร์ดผ่าน Wi-Fi ให้เอง |
-| หน้าเว็บจากที่ไหนก็ได้ | `https://oee.<domain>` | ดูขั้นตอนที่ 12 |
+| หน้าเว็บจากที่ไหนก็ได้ | `https://oee.<domain>` · `https://control.<domain>` | ดูขั้นตอนที่ 13 |
 | Grafana | `http://<SERVER_IP>:3000` | `admin` / `GRAFANA_ADMIN_PASSWORD` |
 | InfluxDB | `http://<SERVER_IP>:8086` | `admin` / `INFLUX_ADMIN_PASSWORD` |
 | PostgreSQL | `<SERVER_IP>:5432` database `factory` | `reader` / `PG_READER_PASS` (อ่านอย่างเดียว) · `factory_admin` / `PG_ADMIN_PASSWORD` |
@@ -283,7 +288,23 @@ docker compose start telegraf sheets-sync
 
 ---
 
-## 12. (ไม่บังคับ) เข้าหน้าเว็บจากที่ไหนก็ได้ด้วย Cloudflare Tunnel
+## 12. หน้า control (แยกจากหน้า dashboard)
+
+ปุ่มควบคุมที่เคยอยู่แผงซ้ายของ dashboard ย้ายไปอยู่หน้า **control** แยกต่างหาก เปิดบนมือถือ / แท็บเล็ตได้ — ปุ่ม **Control ↗** มุมซ้ายบนของ dashboard เปิดหน้านี้
+
+| สถานะ ESP32 | หน้า control ทำอะไร | dashboard ทำอะไร |
+|---|---|---|
+| **offline** (ไม่มีข้อมูลจากบอร์ด 3 วินาที) | **CONTROL**: ปุ่มหมุนความเร็ว, RUN / STOP, เปิด / ปิดฝา, Alarm, GOOD / REJECT | ไลน์จำลองทำตามหน้า control |
+| **online** | **MONITOR**: ดูสัญญาณทุกตัวที่บอร์ดส่ง (สถานะเครื่อง, ชิ้นงาน, ความเร็ว, alarm, QC, events, raw lines) ควบคุมไม่ได้ | ไลน์ทำตามบอร์ด |
+
+- ทั้ง 2 หน้า login MQTT ด้วย user `web` + `MQTT_WEB_PASS` — เบราว์เซอร์จำรหัสไว้ เปิดครั้งต่อไปต่อให้เอง
+- หน้า control ส่งค่าไปที่ MQTT `group3/dpx/line1/control` (retained) — dashboard ที่เปิดทีหลังก็ได้ค่าล่าสุดทันที
+- ค่าจากหน้า control **ไม่ถูกบันทึกลง database** (เป็นการจำลอง) — บันทึกเฉพาะตอนใช้บอร์ดจริง
+- เปิดในวง Wi-Fi: `http://<SERVER_IP>:8080/control.html` · จากที่ไหนก็ได้: `https://control.<domain>` (เพิ่ม route ใน Cloudflare ตามขั้นตอนที่ 13)
+
+---
+
+## 13. (ไม่บังคับ) เข้าหน้าเว็บจากที่ไหนก็ได้ด้วย Cloudflare Tunnel
 
 ต้องมี domain ที่ใช้ DNS ของ Cloudflare แล้ว · ไม่ต้องเปิดพอร์ตที่เราเตอร์ เพราะ tunnel ต่อออกจากเครื่อง server ไปหา Cloudflare เอง
 
@@ -298,6 +319,9 @@ docker compose start telegraf sheets-sync
    |---|---|---|---|
    | `oee` | `<domain>` | HTTP | `web:80` |
    | `grafana` | `<domain>` | HTTP | `grafana:3000` |
+   | `control` | `<domain>` | HTTP | `web:80` |
+
+   ถ้าใช้ cloudflared ที่ติดตั้งบนเครื่องอยู่แล้ว (เช่น tunnel เดียวกับแอปอื่น) ใช้ `localhost:8080` / `localhost:3000` แทน `web:80` / `grafana:3000`
 
 4. เปิด tunnel (ในโฟลเดอร์ `OEE-System/server`):
    ```bash
