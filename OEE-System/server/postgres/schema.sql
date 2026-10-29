@@ -68,7 +68,9 @@ ALTER TABLE board   ADD COLUMN IF NOT EXISTS qr_0  double precision;
 ALTER TABLE board   ADD COLUMN IF NOT EXISTS qr_1  double precision;
 ALTER TABLE events  ADD COLUMN IF NOT EXISTS product text;
 ALTER TABLE events  ADD COLUMN IF NOT EXISTS route   text;
-ALTER TABLE events  ADD COLUMN IF NOT EXISTS source  text;   -- website = pressed on the control page (server/control-hub), empty = the board
+ALTER TABLE events  ADD COLUMN IF NOT EXISTS source  text;
+ALTER TABLE events  ADD COLUMN IF NOT EXISTS code    text;   -- product_info: the product's code and name (control page)
+ALTER TABLE events  ADD COLUMN IF NOT EXISTS name    text;   -- website = pressed on the control page (server/control-hub), empty = the board
 ALTER TABLE minutes ADD COLUMN IF NOT EXISTS product text;
 ALTER TABLE board        OWNER TO telegraf;
 ALTER TABLE board_status OWNER TO telegraf;
@@ -163,6 +165,13 @@ CREATE OR REPLACE VIEW oee_hourly AS
          availability, performance, quality, oee
   FROM oee('1 hour', date_trunc('day', now()) - INTERVAL '30 days');
 
+-- what each product of a line is (the latest code and name set on the control page)
+CREATE OR REPLACE VIEW product_info AS
+  SELECT DISTINCT ON (line, product) line, product, code, name, time AS since
+  FROM events
+  WHERE event = 'product_info'
+  ORDER BY line, product, time DESC;
+
 -- per product per day: parts off the end of its route, and its QC result
 CREATE OR REPLACE VIEW product_daily AS
   SELECT (time_bucket('1 day', time, 'Asia/Bangkok') AT TIME ZONE 'Asia/Bangkok')::date AS day, line, product,
@@ -170,8 +179,10 @@ CREATE OR REPLACE VIEW product_daily AS
          count(*) FILTER (WHERE event = 'good')   AS good,
          count(*) FILTER (WHERE event = 'reject') AS reject,
          round(count(*) FILTER (WHERE event = 'good')::numeric
-               / nullif(count(*) FILTER (WHERE event IN ('good', 'reject')), 0), 4) AS quality
-  FROM events
+               / nullif(count(*) FILTER (WHERE event IN ('good', 'reject')), 0), 4) AS quality,
+         (SELECT i.code FROM product_info i WHERE i.line = e.line AND i.product = e.product) AS code,
+         (SELECT i.name FROM product_info i WHERE i.line = e.line AND i.product = e.product) AS name
+  FROM events e
   WHERE product IS NOT NULL AND event IN ('output', 'good', 'reject') AND source IS DISTINCT FROM 'website'
   GROUP BY 1, 2, 3;
 
@@ -202,7 +213,8 @@ COMMENT ON TABLE machines IS 'Settings: name and ideal_cycle_s (the fastest norm
 COMMENT ON FUNCTION oee(interval, timestamptz, timestamptz, interval) IS 'OEE per machine per time bucket (Thailand time). Example: SELECT * FROM oee(''1 day'', now() - interval ''7 days''); shifts 08-20 / 20-08: oee(''12 hours'', bucket_offset => ''8 hours''). Availability = run / logged time, Performance = ideal_cycle_s x parts / run time, Quality = good / (good + reject) of the machine''s product (product column), OEE = A x P x Q. Ratios are 0..1; null when there is nothing to divide by.';
 COMMENT ON VIEW oee_daily IS 'OEE per machine per day (Thailand date), all history. Same formulas as the oee() function.';
 COMMENT ON VIEW oee_hourly IS 'OEE per machine per hour, from the start of the day 30 days ago until now. Same formulas as the oee() function.';
-COMMENT ON VIEW product_daily IS 'Per product per day (Thailand date): output = parts off the end of its route, good / reject = QC presses for it, quality = good / (good + reject).';
+COMMENT ON VIEW product_daily IS 'Per product per day (Thailand date): output = parts off the end of its route, good / reject = QC presses for it, quality = good / (good + reject), code / name = what the product is (the latest set on the control page).';
+COMMENT ON VIEW product_info IS 'What each product (A / B) of a line is: the latest code and name set on the control page, and since when.';
 COMMENT ON VIEW route_history IS 'Each route change: from time on, product A went through product_a_machines and B through product_b_machines, in that order (e.g. 12 = machine 1 then 2).';
 COMMENT ON VIEW line_status IS 'Per line: board online / offline and when each kind of data last arrived.';
 

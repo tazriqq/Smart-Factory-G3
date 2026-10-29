@@ -16,6 +16,9 @@
 # Google Sheet show what was done on the control pages next to what was done on the board (source empty = board).
 # The OEE numbers in the database count the board's rows only.
 #
+# Products: items = {"A": {"code": "P-001", "name": "Shaft S-100"}, "B": {...}} names what each product of the line
+# (line = LINE_ID) is; set with keys item.A.code / item.A.name, logged as event product_info (code, name).
+#
 # Pairing (log another device in): a logged-in control page posts {"by":"a1b2"} to <line>/control/pair; the hub
 # answers on <line>/control/pair/a1b2 with a 5-character code. GET /pair/<code> (nginx passes it on) gives that
 # device the web login once: a code works a single time, for PAIR_TTL_S seconds, and wrong guesses get blocked.
@@ -36,6 +39,7 @@ PORT = int(os.environ.get("MQTT_PORT", "1883"))
 USER = os.environ["MQTT_USER"]
 PASS = os.environ["MQTT_PASS"]
 BASE = os.environ.get("LINE_TOPIC", "group3/dpx/line1")
+LINE_ID = os.environ.get("LINE_ID", BASE.rsplit("/", 1)[-1])
 T_STATE, T_SET, T_BOARD = BASE + "/control", BASE + "/control/set", BASE + "/board"
 T_PAIR, T_EVENTS = BASE + "/control/pair", BASE + "/events"
 PRESS_EVENT = {"good": "good", "rej": "reject", "undo": "undo", "reset": "reset"}
@@ -54,6 +58,7 @@ state = {
     "pot": [512, 512, 512, 512], "run": [1, 1, 1, 1], "door": [0, 0, 0, 0], "setup": [0, 0, 0, 0], "al": 0,
     "sim": {"run": 1, "speed": 4}, "route": "1234-", "useBoard": 1,
     "good": 0, "rej": 0, "undo": 0, "reset": 0,
+    "items": {"A": {"code": "", "name": ""}, "B": {"code": "", "name": ""}}, "line": LINE_ID,
     "id": "".join(random.choices(string.ascii_lowercase + string.digits, k=8)),
 }
 ver = {"n": 0, "kv": {}, "by": {}}   # version counter, version and author of each value
@@ -64,6 +69,12 @@ dirty = True
 
 def valid(key, value):
     """the value a key may take, or None"""
+    if key.startswith("item."):
+        _, p, field = (key.split(".") + ["", ""])[:3]
+        if p not in ("A", "B") or field not in ("code", "name") or not isinstance(value, str):
+            return None
+        value = "".join(ch for ch in value if ch.isprintable()).strip()
+        return value[: 20 if field == "code" else 60]
     name, _, idx = key.partition(".")
     if name in ("pot", "run", "door", "setup"):
         if not idx.isdigit() or int(idx) > 3:
@@ -83,6 +94,10 @@ def valid(key, value):
 
 
 def put(key, value):
+    if key.startswith("item."):
+        _, p, field = key.split(".")
+        state["items"][p][field] = value
+        return
     name, _, idx = key.partition(".")
     if name in ("pot", "run", "door", "setup"):
         state[name][int(idx)] = value
@@ -115,9 +130,16 @@ def on_command(m):
     ver["n"] += 1
     ver["kv"][key], ver["by"][key] = ver["n"], by
     name, _, idx = key.partition(".")
-    before = state[name][int(idx)] if name in ("pot", "run", "door", "setup") else state["sim"][idx] if name == "sim" else state[key]
+    if name == "item":
+        p, field = idx.split(".")
+        before = state["items"][p][field]
+    else:
+        before = state[name][int(idx)] if name in ("pot", "run", "door", "setup") else state["sim"][idx] if name == "sim" else state[key]
     put(key, value)
-    if before != value:
+    if before != value and name == "item":
+        it = state["items"][idx.split(".")[0]]
+        outbox.append({"machine": 0, "event": "product_info", "product": idx.split(".")[0], "code": it["code"], "name": it["name"]})
+    elif before != value:
         if name in SWITCH_EVENT:
             outbox.append({"machine": int(idx) + 1, "event": SWITCH_EVENT[name][0 if value else 1]})
         elif key == "al":
@@ -221,6 +243,12 @@ def on_message(client, _userdata, msg):
                 state[k] = m[k]
         if isinstance(m.get("sim"), dict):
             state["sim"].update({k: v for k, v in m["sim"].items() if valid("sim." + k, v) is not None})
+        if isinstance(m.get("items"), dict):
+            for p in ("A", "B"):
+                for f in ("code", "name"):
+                    v = valid(f"item.{p}.{f}", (m["items"].get(p) or {}).get(f, ""))
+                    if v is not None:
+                        state["items"][p][f] = v
         ver["n"] = int(m.get("v", 0) or 0)
         dirty = True
         print("control-hub: carried on from the retained state", flush=True)

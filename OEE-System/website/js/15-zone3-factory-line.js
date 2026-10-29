@@ -44,6 +44,9 @@ function parseRoute(t) {
 const routeText = (r) => r.map((ms) => ms.map((i) => i + 1).join('')).join('-');
 let ROUTE = parseRoute((() => { try { return localStorage.getItem(ROUTE_KEY); } catch { return null; } })()) || [[0, 1, 2, 3], []];
 const prodOf = (i) => ROUTE.findIndex((ms) => ms.includes(i));   // 0 = A, 1 = B, -1 = idle
+// what each product is (code, name; set on the control page, kept by the server's control-hub) and the line
+let ITEMS = { A: { code: '', name: '' }, B: { code: '', name: '' } }, LINE_ID = 'line1';
+const itemText = (p) => { const it = ITEMS[PRODUCTS[p]] || {}; return [it.code, it.name].filter(Boolean).join(' '); };
 
 // conveyors: start on the floor (u, v) and run along one axis per move
 const TUCK = 30;
@@ -251,13 +254,13 @@ function makeOutput(b, k, compact) {
   node.className = 'lf-out';
   node.dataset.p = b.product;
   node.style.left = (10 + k * 222) + 'px';
-  node.innerHTML = `<div class="o-h"><span class="o-p">${P}</span>Output ${P} · ผลผลิต</div>
+  node.innerHTML = `<div class="o-h"><span class="o-p">${P}</span><span class="o-name">Output ${P} · ผลผลิต</span></div>
     <div class="o-g"><span><small>total</small><b data-o="tot">0</b></span><span><small>QC wait</small><b data-o="wait">0</b></span><span class="o-good"><small>good</small><b data-o="good">0</b></span><span class="o-bad"><small>scrap</small><b data-o="bad">0</b></span></div>
     <div class="o-y"><small>yield</small><span class="o-ybar"><span></span></span><b data-o="yield">—</b></div>
     <div class="o-s" data-o="by"></div>`;
   tagsBox.appendChild(node);
   const q = (k) => node.querySelector(`[data-o="${k}"]`);
-  return { p: b.product, node, tot: q('tot'), wait: q('wait'), good: q('good'), bad: q('bad'), yld: q('yield'), ybar: node.querySelector('.o-ybar span'), by: q('by'), stacks: makeStacks(b, compact) };
+  return { p: b.product, node, name: node.querySelector('.o-name'), tot: q('tot'), wait: q('wait'), good: q('good'), bad: q('bad'), yld: q('yield'), ybar: node.querySelector('.o-ybar span'), by: q('by'), stacks: makeStacks(b, compact) };
 }
 
 // output piles beside the end of a product's last belt, one box per part: pile 1 = off the line, waiting
@@ -685,6 +688,8 @@ function render() {
   BELTS.forEach((b) => (wip += b.parts.length + b.box.length));
   followLocalQc();
   outs.forEach((out) => {
+    const nm = itemText(out.p) || `Output ${PRODUCTS[out.p]} · ผลผลิต`;
+    if (out.name.textContent !== nm) out.name.textContent = nm;
     const q = qcOf(out.p), checked = q.good + q.rej, wait = Math.max(0, fin[out.p] - checked);
     out.stacks(wait, q.good, q.rej);
     out.tot.textContent = fin[out.p]; out.wait.textContent = wait; out.good.textContent = q.good; out.bad.textContent = q.rej;
@@ -693,9 +698,15 @@ function render() {
     out.by.textContent = wait ? `${wait} รอตรวจ · กด GOOD / REJECT เพื่อคัดกอง 1` : checked ? 'ตรวจครบแล้ว' : 'ยังไม่มีชิ้นงานออกจากไลน์';
   });
   $l('fin').textContent = finished; $l('wip').textContent = wip; $l('bn').textContent = bn;
+  const now = `<small>กำลังผลิต · ${LINE_ID}</small>` + ROUTE.map((ms, p) => ms.length ? `<span class="o-p" data-p="${p}">${PRODUCTS[p]}</span><b>${itemText(p) || 'product ' + PRODUCTS[p]}</b><em>${ms.map((i) => MACHINES[i].no).join('→')}</em>` : '').join('');
+  if (nowBox.innerHTML !== now) nowBox.innerHTML = now;
   $l('th').textContent = simT > 60 ? (finished / (simT / 3600)).toFixed(0) + ' /h' : '— /h';
   $l('time').textContent = fmt(simT);
 }
+// what the line is making right now: product, code, name, machines (line bar)
+const nowBox = document.createElement('span');
+nowBox.className = 'lb-now';
+document.querySelector('.line-bar .lb-title')?.after(nowBox);
 const boardTag = document.createElement('span');
 boardTag.className = 'lb-stat lb-board'; boardTag.hidden = true;
 boardTag.innerHTML = '<small>board</small><b>—</b>';
@@ -851,7 +862,7 @@ function renderDash() {
     ['throughput', simT > 60 ? (finished / (simT / 3600)).toFixed(0) + ' /h' : '—', 'good parts per hour'],
     ['line time', fmt(simT), BB ? (BB.al ? 'ALARM' : 'board · real time') : running ? 'running' : 'paused'],
     ...ROUTE.map((ms, p) => [ms, p]).filter(([ms]) => ms.length).map(([ms, p]) => { const qp = qcOf(p);
-      return [`product ${PRODUCTS[p]}`, fin[p], `${ms.map((i) => MACHINES[i].no).join(' → ')} · ✓ ${qp.good} · ✕ ${qp.rej}`]; }),
+      return [`product ${PRODUCTS[p]}${itemText(p) ? ' · ' + itemText(p) : ''}`, fin[p], `${ms.map((i) => MACHINES[i].no).join(' → ')} · ✓ ${qp.good} · ✕ ${qp.rej}`]; }),
   ].map(([k, v, e]) => `<div class="od-kpi"><small>${k}</small><b>${v}</b><em>${e}</em></div>`).join('');
   }
   MACHINES.forEach((m, i) => {
@@ -1055,7 +1066,7 @@ document.querySelector('.line-bar').after(mv);
 const mvCards = [...mv.querySelectorAll('.mv-m')].map((c) => ({ c, dot: c.querySelector('.mv-dot'), pr: c.querySelector('.tg-pr'), st: c.querySelector('.mv-st'), v: Object.fromEntries([...c.querySelectorAll('[data-v]')].map((e) => [e.dataset.v, e])) }));
 function renderPhone() {
   if (!phone.matches) return;
-  mv.querySelector('.mv-outs').innerHTML = outs.map((o) => `<div class="mv-card"><div class="mv-h"><span class="o-p" data-p="${o.p}">${PRODUCTS[o.p]}</span><b>Output ${PRODUCTS[o.p]}</b><em>${ROUTE[o.p].map((i) => MACHINES[i].no).join(' → ')}</em></div>
+  mv.querySelector('.mv-outs').innerHTML = outs.map((o) => `<div class="mv-card"><div class="mv-h"><span class="o-p" data-p="${o.p}">${PRODUCTS[o.p]}</span><b>${itemText(o.p) || 'Output ' + PRODUCTS[o.p]}</b><em>${LINE_ID} · ${ROUTE[o.p].map((i) => MACHINES[i].no).join(' → ')}</em></div>
     <div class="mv-g"><span><small>total</small><b>${o.tot.textContent}</b></span><span><small>QC wait</small><b>${o.wait.textContent}</b></span><span class="o-good"><small>good</small><b>${o.good.textContent}</b></span><span class="o-bad"><small>scrap</small><b>${o.bad.textContent}</b></span></div>
     <div class="mv-apq">yield ${o.yld.textContent}</div></div>`).join('');
   slots.forEach((s, i) => {
@@ -1145,6 +1156,7 @@ window.__line = { MACHINES, BELTS, slots, placeTags, fit, oeeOf, speedChanged() 
   setSpeed(n) { const b = document.querySelector(`.line-bar [data-speed="${n}"]`); if (b && speed !== n) b.click(); },
   reset,
   setRouteText(t) { const r = parseRoute(t); if (r) setRoute(r); },
+  setItems(items, line) { ITEMS = { A: { ...ITEMS.A, ...(items.A || {}) }, B: { ...ITEMS.B, ...(items.B || {}) } }; if (line) LINE_ID = line; },
   setSetup(i, on) { if (!slots[i] || !!window.__setup[i] === !!on) return; window.__setup[i] = !!on; slots[i].tag.querySelector('.tg-ma').setAttribute('aria-pressed', String(!!on)); },
   toggleDoor(i) { const s = slots[i]; if (s && !boardLive() && s.door.can()) s.door.toggle(); } };
 

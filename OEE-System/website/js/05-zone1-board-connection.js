@@ -314,6 +314,7 @@ async function openMqtt(my) {
 let lastControl = null, controlAt = 0, controlSrc = null;
 function followControl(m) {
   controlSrc = m.src === "sim" || m.src === "board" ? m.src : null;
+  if (m.items) window.__line?.setItems?.(m.items, m.line);   // what is being made, whichever source drives the line
   if (controlSrc === "board") { lastControl = m; return; }
   if (controlSrc === "sim" && window.__board.live) window.__board.stop();   // let go of the board at once
   if (window.__board.live || !Array.isArray(m.pot) || !Array.isArray(m.run)) return;   // the board wins

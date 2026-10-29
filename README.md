@@ -204,7 +204,8 @@ Windows `ipconfig` · Mac `ipconfig getifaddr en0` · Linux `hostname -I` แล
 - 1 เครื่องอยู่ได้ product เดียว · เครื่องแรกของแต่ละเส้นทางมีวัตถุดิบเอง · เครื่องสุดท้ายคือ output ของ product นั้น
 - บอร์ดออนไลน์: เส้นทางถูกส่งไปที่บอร์ด (บอร์ดจำไว้แม้ปิดเครื่อง) · ตัวจำลอง: เส้นทางอยู่ใน control-hub
 - เปลี่ยนเส้นทางแล้วชิ้นงานที่ค้างบนสายพานหายไป · GOOD / REJECT นับให้ product ที่มีชิ้นงานออกล่าสุด
-- database: OEE แต่ละเครื่องมีคอลัมน์ `product` · view `product_daily` · `route_history`
+- **รหัส + ชื่อสินค้า:** ในการ์ด Products ใส่ **รหัส** (เช่น `P-001`) และ **ชื่อสินค้า** (เช่น `Shaft S-100`) ของ A / B แล้วกด Enter หรือคลิกออก → หน้า OEE แสดงบนแถบไลน์ว่า *กำลังผลิต · line1 · A P-001 Shaft S-100 (01→02) · B …* และบนกล่อง Output · บันทึกเป็น event `product_info` · view `product_info` (ค่าล่าสุด) · `product_daily` และแท็บ **Products** ในชีตมีคอลัมน์ `code` / `name`
+- database: OEE แต่ละเครื่องมีคอลัมน์ `product` · view `product_daily` · `product_info` · `route_history`
 
 ---
 

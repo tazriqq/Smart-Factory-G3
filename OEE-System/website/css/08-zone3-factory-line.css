@@ -421,3 +421,16 @@ body.phone .dash-bar .lf-tabs button{padding:5px 10px}
 body.phone .dash-bar .lf-tabs kbd{display:none}
 body.phone .dash-title span{display:none}
 .view-toggle{font-size:11px;padding:4px 8px}
+/* the OEE panel's card fills the column, down to the bottom of the 3D view next to it */
+@media (min-width:1180px) and (min-height:620px){
+  .dash-oee{display:flex;flex-direction:column}
+  .dash-oee>.oee{flex:1 0 auto;box-sizing:border-box;align-content:start}
+}
+/* what the line is making: in the line bar */
+.lb-now{display:inline-flex;flex-wrap:wrap;align-items:center;gap:4px 6px;font-size:11px;color:var(--anatomy-text)}
+.lb-now small{color:var(--anatomy-muted);text-transform:uppercase;letter-spacing:.08em;font-size:9px;margin-right:2px}
+.lb-now b{color:var(--anatomy-strong);font-weight:500}
+.lb-now em{font-style:normal;color:var(--anatomy-muted);margin-right:8px}
+.lb-now .o-p{margin-right:0}
+.o-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:170px;display:inline-block;vertical-align:bottom}
+body.phone .lb-now{display:flex;width:100%;margin-top:4px}

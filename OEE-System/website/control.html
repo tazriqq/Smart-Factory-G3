@@ -133,6 +133,9 @@ body:not([data-mode="monitor"]) .mon{display:none!important}
 .rt-row[data-p="1"] .btn[aria-pressed="true"]{background:var(--pb);color:#fff}
 .rt-row .btn[data-n]:not([data-n=""])::after{content:attr(data-n);position:absolute;top:-7px;right:-6px;min-width:15px;height:15px;border-radius:8px;font-size:9px;line-height:15px;color:var(--strong);background:var(--card);box-shadow:0 0 0 1px var(--line)}
 .rt-seq{font:12px var(--mono);font-style:normal;color:var(--muted);margin-left:6px}
+.rt-item{display:flex;flex-wrap:wrap;gap:6px;width:100%;margin:2px 0 4px 28px}
+.rt-item .it-code{width:110px}.rt-item .it-name{flex:1 1 200px}
+@media (max-width:620px){.rt-item{margin-left:0}}
 #rt-msg{font:12px var(--mono);color:var(--muted)}
 /* simulation */
 .sim{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px}
@@ -286,7 +289,7 @@ main>*{min-width:0}
   </section>
 
   <section class="card" aria-label="Products">
-    <div class="log-h"><span class="k">Products · เส้นทางผลิต</span><span class="grow"></span><span id="rt-msg">กดเครื่องตามลำดับ · กดซ้ำเพื่อเอาออก</span></div>
+    <div class="log-h"><span class="k">Products · เส้นทางผลิต · <span id="rt-line">line1</span></span><span class="grow"></span><span id="rt-msg">กดเครื่องตามลำดับ · กดซ้ำเพื่อเอาออก</span></div>
     <div class="rt-row" data-p="0"><i class="rp">A</i></div>
     <div class="rt-row" data-p="1"><i class="rp b">B</i></div>
     <div class="conn" style="margin-top:10px"><button class="btn" id="rt-apply" type="button">Apply</button><button class="btn" id="rt-undo" type="button">Undo</button>
@@ -495,11 +498,13 @@ function onBoard(text) {
    dashboard's simulated line only (the board has no such switches). */
 const ME = Math.random().toString(36).slice(2, 10);
 const ctl = { pot: [512, 512, 512, 512], run: [1, 1, 1, 1], door: [0, 0, 0, 0], al: 0, good: 0, rej: 0, undo: 0, reset: 0,
-  setup: [0, 0, 0, 0], sim: { run: 1, speed: 4 }, route: "1234-", useBoard: 1 };   // what this page shows
+  setup: [0, 0, 0, 0], sim: { run: 1, speed: 4 }, route: "1234-", useBoard: 1,
+  items: { A: { code: "", name: "" }, B: { code: "", name: "" } } };   // what this page shows
 let S = null, dragging = -1, sendTimer = 0;   // S: the hub's state as last received
 const sent = {};                              // values sent but not yet back from the hub
 const KEYS = () => [0, 1, 2, 3].flatMap((i) => ["pot", "run", "door", "setup"].map((k) => [`${k}.${i}`, ctl[k][i], S[k][i]]))
-  .concat([["al", ctl.al, S.al], ["useBoard", ctl.useBoard, S.useBoard], ["route", ctl.route, S.route], ["sim.run", ctl.sim.run, S.sim.run], ["sim.speed", ctl.sim.speed, S.sim.speed]]);
+  .concat([["al", ctl.al, S.al], ["useBoard", ctl.useBoard, S.useBoard], ["route", ctl.route, S.route], ["sim.run", ctl.sim.run, S.sim.run], ["sim.speed", ctl.sim.speed, S.sim.speed]])
+  .concat(["A", "B"].flatMap((p) => ["code", "name"].map((f) => [`item.${p}.${f}`, ctl.items[p][f], ((S.items || {})[p] || {})[f] ?? ""])));
 function command(m) {
   if (!client || !client.connected) return;
   const text = JSON.stringify({ ...m, by: ME });
@@ -550,6 +555,14 @@ function onState(text) {
   ctl.pot = m.pot.map((v, i) => (i === dragging ? ctl.pot[i] : v));
   for (const k of ["al", "useBoard", "route", "good", "rej", "undo", "reset"]) ctl[k] = m[k];
   ctl.sim = { ...m.sim };
+  // product code / name: not over what someone is typing here
+  for (const p of ["A", "B"]) for (const f of ["code", "name"]) {
+    const box = document.querySelector(`.rt-row[data-p="${p === "A" ? 0 : 1}"] .it-${f}`);
+    if (document.activeElement !== box) ctl.items[p][f] = ((m.items || {})[p] || {})[f] || "";
+  }
+  if (m.line) $("rt-line").textContent = m.line;
+  if (S && m.items && JSON.stringify(S.items) !== JSON.stringify(m.items) && m.last && m.last.by !== ME && m.last.ok)
+    event(`product names changed · from another device`, "b");
   for (const k in sent) delete sent[k];
   renderCtl(); setMode();
 }
@@ -609,7 +622,17 @@ const routeText = (r) => r.map((ms) => ms.map((i) => i + 1).join("")).join("-");
 const liveRoute = () => (mode() === "monitor" ? prev?.route : ctl.route) || "1234-";
 let draft = parseRoute(ctl.route) || [[0, 1, 2, 3], []], shownRoute = "", waitRoute = null;
 document.querySelectorAll(".rt-row").forEach((row) => row.insertAdjacentHTML("beforeend",
-  MACHINES.map((m, i) => `<button class="btn" type="button" data-i="${i}" title="${m.no} ${m.name}">${m.no}</button>`).join("") + `<em class="rt-seq"></em>`));
+  MACHINES.map((m, i) => `<button class="btn" type="button" data-i="${i}" title="${m.no} ${m.name}">${m.no}</button>`).join("") + `<em class="rt-seq"></em>`
+  + `<span class="rt-item"><input class="in it-code" type="text" maxlength="20" placeholder="รหัส เช่น P-001" aria-label="product code" spellcheck="false"><input class="in it-name" type="text" maxlength="60" placeholder="ชื่อสินค้า เช่น Shaft S-100" aria-label="product name"></span>`));
+// product code / name: saved when the box loses focus or on Enter, for every page and the database
+document.querySelectorAll(".rt-row").forEach((row) => {
+  const P = row.dataset.p === "0" ? "A" : "B";
+  for (const f of ["code", "name"]) {
+    const box = row.querySelector(".it-" + f);
+    box.addEventListener("change", () => { ctl.items[P][f] = box.value.trim(); sendCtl(`product ${P} ${f} → ${ctl.items[P][f] || "(empty)"}`, "b"); });
+    box.addEventListener("keydown", (e) => { if (e.key === "Enter") box.blur(); });
+  }
+});
 function renderRoute() {
   const live = liveRoute();
   if (live !== shownRoute) {                       // the line's route changed: start editing from it
@@ -620,6 +643,10 @@ function renderRoute() {
     const p = +row.dataset.p;
     row.querySelectorAll(".btn").forEach((b) => { const k = draft[p].indexOf(+b.dataset.i); b.setAttribute("aria-pressed", String(k >= 0)); b.dataset.n = k >= 0 ? k + 1 : ""; });
     row.querySelector(".rt-seq").textContent = draft[p].length ? draft[p].map((i) => MACHINES[i].no).join(" → ") + " → out" : "— not made";
+  });
+  document.querySelectorAll(".rt-row").forEach((row) => {
+    const P = row.dataset.p === "0" ? "A" : "B";
+    for (const f of ["code", "name"]) { const box = row.querySelector(".it-" + f); if (document.activeElement !== box && box.value !== ctl.items[P][f]) box.value = ctl.items[P][f]; }
   });
   const changed = routeText(draft) !== live;
   $("rt-apply").disabled = !changed; $("rt-undo").disabled = !changed;
