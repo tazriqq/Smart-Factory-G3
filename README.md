@@ -2,9 +2,45 @@
 
 ระบบวัด OEE ของไลน์ผลิตจำลอง 4 เครื่อง: บอร์ด ESP32 ส่งสัญญาณผ่าน MQTT → เครื่อง server เก็บลง database, แสดงบนหน้าเว็บ / Grafana และส่งสรุปขึ้น Google Sheet
 
+```mermaid
+flowchart LR
+    subgraph board["บอร์ด ESP32"]
+        hw["ปุ่มหมุน M1–M4 · ปุ่มฝา<br/>GOOD / REJECT · alarm"]
+    end
+
+    subgraph server["เครื่อง server · docker compose (OEE-System/server)"]
+        mq["Mosquitto<br/>MQTT :1883 · WebSocket :9001"]
+        web["nginx<br/>หน้าเว็บ :8080"]
+        tg["Telegraf"]
+        pg[("PostgreSQL / TimescaleDB :5432<br/>ที่เก็บหลัก + คำนวณ OEE")]
+        ifx[("InfluxDB :8086")]
+        gf["Grafana :3000"]
+        ss["sheets-sync<br/>ทุก 15 นาที + Events ทุก ~10 วินาที"]
+    end
+
+    browser["เบราว์เซอร์<br/>Chrome / Edge"]
+    gs["Google Sheet<br/>(Apps Script)"]
+    claude["Claude<br/>(MCP)"]
+
+    hw -- "MQTT: board · events · minutes" --> mq
+    mq --> tg
+    tg --> pg
+    tg --> ifx
+    ifx --> gf
+    pg --> ss
+    ss -- HTTPS --> gs
+    pg -. "อ่านอย่างเดียว (reader)" .-> claude
+    web -- "โหลดหน้าเว็บ" --> browser
+    mq -- "WebSocket :9001 (ข้อมูลสด)" --> browser
+    hw -. "หรือต่อตรง: USB / Bluetooth / Wi-Fi /data" .-> browser
 ```
-ESP32 ──MQTT──► เครื่อง server (Docker) ──► หน้าเว็บ :8080 · Grafana :3000 · PostgreSQL :5432 ──► Google Sheet
-```
+
+- **ESP32** อ่านปุ่ม / สวิตช์ แล้วส่ง 3 topic ผ่าน MQTT: `board` (สถานะสด ~1 ครั้ง/วินาที), `events` (กดปุ่ม, เปิดฝา, เดิน / หยุด, ผลิตเสร็จ 1 ชิ้น), `minutes` (สรุปทุก 1 นาที / เครื่อง)
+- **Mosquitto** เป็นตัวกลาง: ส่งต่อให้ Telegraf และให้หน้าเว็บผ่าน WebSocket
+- **Telegraf** เขียนทุกข้อความลง **PostgreSQL** (ที่เก็บหลัก, คำนวณ OEE ด้วย view `oee_daily` / `oee_hourly`) และ **InfluxDB** (ให้ Grafana วาดกราฟสด)
+- **sheets-sync** อ่านสรุป OEE จาก PostgreSQL ส่งขึ้น **Google Sheet**
+- **Claude** อ่าน database ผ่าน MCP ด้วย user `reader` (อ่านอย่างเดียว)
+- หน้าเว็บต่อบอร์ดตรงๆ ได้ด้วย (USB / Bluetooth / Wi-Fi) โดยไม่ต้องมี server — แต่จะไม่มีการบันทึกลง database
 
 คู่มือนี้คือ **ขั้นตอนทั้งหมดหลัง clone ไปใช้บนเครื่องใหม่** — รายละเอียดเชิงลึก (ตาราง database, สูตร OEE, topic MQTT, โครงหน้าเว็บ) อยู่ใน [`OEE-System/README.md`](OEE-System/README.md)
 
