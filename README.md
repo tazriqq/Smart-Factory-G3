@@ -294,9 +294,10 @@ docker compose start telegraf sheets-sync
 
 | สถานะ ESP32 | หน้า control ทำอะไร | dashboard ทำอะไร |
 |---|---|---|
-| **offline** (ไม่มีข้อมูลจากบอร์ด 3 วินาที) | **CONTROL**: ปุ่มหมุนความเร็ว, RUN / STOP, เปิด / ปิดฝา, Alarm, GOOD / REJECT | ไลน์จำลองทำตามหน้า control |
+| **offline** (ไม่มีข้อมูลจากบอร์ด 3 วินาที) | **CONTROL**: ปุ่มหมุนความเร็ว, RUN / STOP, เปิด / ปิดฝา, Set / Maintenance, Alarm, GOOD / REJECT / Undo, ไลน์จำลอง (Pause / 1× 4× 10× / Reset) | ไลน์จำลองทำตามหน้า control |
 | **online** | **MONITOR**: ดูสัญญาณทุกตัวที่บอร์ดส่ง (สถานะเครื่อง, ชิ้นงาน, ความเร็ว, alarm, QC, events, raw lines) ควบคุมไม่ได้ | ไลน์ทำตามบอร์ด |
 
+- หน้า dashboard มีไว้ดูอย่างเดียว: ปุ่มควบคุมทั้งหมดอยู่หน้า control · การตั้งค่าการเชื่อมต่อซ่อนอยู่หลังปุ่ม **⚙** ข้างป้ายสถานะ (เปิดให้เองถ้ายังต่อไม่ได้)
 - ทั้ง 2 หน้า login MQTT ด้วย user `web` + `MQTT_WEB_PASS` — เบราว์เซอร์จำรหัสไว้ เปิดครั้งต่อไปต่อให้เอง
 - หน้า control ส่งค่าไปที่ MQTT `group3/dpx/line1/control` (retained) — dashboard ที่เปิดทีหลังก็ได้ค่าล่าสุดทันที
 - ค่าจากหน้า control **ไม่ถูกบันทึกลง database** (เป็นการจำลอง) — บันทึกเฉพาะตอนใช้บอร์ดจริง

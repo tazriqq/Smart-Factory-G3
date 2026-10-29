@@ -33,8 +33,9 @@ let lastData = 0;
 function setPill(state, text) { pill.dataset.state = state; pillText.textContent = text; }
 setInterval(() => {
   if (!conn) return;
-  const now = performance.now(), quiet = now - lastData > 2500;
-  const via = !quiet && now - controlAt < 2500 && !window.__board.live ? " · control page" : quiet ? " · no data" : " · receiving";
+  // the control page resends every 2 s, but a browser slows a hidden tab down to about once a second or less
+  const now = performance.now(), fromControl = !window.__board.live && now - controlAt < 10000, quiet = !fromControl && now - lastData > 2500;
+  const via = fromControl ? " · control page" : quiet ? " · no data" : " · receiving";
   setPill(quiet ? "quiet" : "on", "Connected · " + NAMES[conn.kind] + via);
 }, 500);
 const lastAdc = Array(COUNT).fill(null);
@@ -181,6 +182,7 @@ sourceSel.addEventListener("change", () => {
 // setRoute(text): sends the products' route ("12-34") to the board over this connection
 function connected(kind, close, setRoute) {
   conn = { kind, close };
+  document.body.classList.remove("conn-open");
   window.__board.setRoute = setRoute || null;
   lastData = performance.now();
   setPill("on", "Connected · " + NAMES[kind]);
@@ -306,9 +308,14 @@ function followControl(m) {
   // a door can refuse to move for a moment (covers off, mid-animation): the page resends every 2 s
   if (Array.isArray(m.door)) for (let i = 0; i < 4; i++) if (!!m.door[i] !== !!window.__door?.[i]) window.__line?.toggleDoor?.(i);
   const q = lastControl && lastControl.id === m.id ? lastControl : null;
+  const L = window.__line;
+  if (Array.isArray(m.setup)) for (let i = 0; i < 4; i++) L?.setSetup?.(i, !!m.setup[i]);
+  if (m.sim) { L?.setRunning?.(m.sim.run !== 0); if (m.sim.speed) L?.setSpeed?.(m.sim.speed); }
   if (q) {
     for (let k = 0; k < (m.good >>> 0) - (q.good >>> 0) && k < 100; k++) window.__qcPress?.("good");
     for (let k = 0; k < (m.rej >>> 0) - (q.rej >>> 0) && k < 100; k++) window.__qcPress?.("reject");
+    for (let k = 0; k < (m.undo >>> 0) - (q.undo >>> 0) && k < 100; k++) document.querySelector('.dash-oee button[data-part="undo"]')?.click();
+    if ((m.reset >>> 0) > (q.reset >>> 0)) L?.reset?.();
   }
   lastControl = m;
 }
@@ -337,11 +344,21 @@ button.addEventListener("click", async () => {
     conn = null; syncSource();
     setPill(error && error.name === "NotFoundError" ? "off" : "error", error && error.name === "NotFoundError" ? "Not connected" : "Could not connect");
     if (error && error.name === "NotFoundError") return say("No device chosen.");
+    document.body.classList.add("conn-open");
     const hint = kind === "usb" ? " Close the Arduino IDE Serial Monitor if it is open." : kind === "wifi" ? "" : kind === "mqtt" ? " Check the broker address (the WebSocket one, e.g. wss://xxxx.s1.eu.hivemq.cloud:8884/mqtt), the user and the password." : " Check that the ESP32 is powered, Bluetooth is on in the computer, and the board is not connected to another device.";
     say("Could not connect: " + (error && error.message ? error.message : error) + "." + hint);
   }
 });
 syncSource();
+// the connection settings stay folded behind ⚙ next to the status pill; they open when there is something to do
+status.textContent = "";
+const gear = Object.assign(document.createElement("button"), { type: "button", className: "conn-gear", textContent: "⚙", title: "Connection settings" });
+gear.setAttribute("aria-label", "Connection settings");
+pill.after(gear);
+const toggleConn = () => document.body.classList.toggle("conn-open");
+gear.addEventListener("click", toggleConn);
+pill.addEventListener("click", toggleConn);
+setTimeout(() => { if (!conn) document.body.classList.add("conn-open"); }, 4000);   // not connected by itself: show how
 // opened from the board itself (http://<board>/, see esp32/build_web.py): it answers /data, so read it over Wi-Fi at once;
 // otherwise, with an MQTT password remembered, connect by MQTT (the board, or the control page, comes in that way)
 const autoMqtt = () => { if (!conn && sourceSel.value === "mqtt" && mqttPass.value) button.click(); };

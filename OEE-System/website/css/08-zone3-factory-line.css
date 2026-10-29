@@ -366,3 +366,13 @@ body[data-theme="dark"] .lf-andon{--an-pole:#55555a;--an-cap:#2a2a2e}
 .rt-f .lb-btn:disabled{opacity:.45;cursor:default}
 .rt-msg{color:var(--anatomy-muted);font-size:9px;white-space:normal;max-width:220px}
 a.knobs-toggle{font-size:11px;text-decoration:none;margin-right:0}
+/* the dashboard only shows the line; the controls are on control.html. Hidden, not removed: the control page
+   still presses them (QC, undo, set-up), and the connection settings open behind the ⚙ button */
+body:not(.conn-open) .dash-bar :is(.link-check,#board-addr,#mqtt-url,#mqtt-topic,#mqtt-user,#mqtt-pass,#connect,#status){display:none!important}
+.conn-pill{cursor:pointer}
+.conn-gear{font:inherit;font-size:14px;line-height:1;padding:4px 7px;color:var(--anatomy-muted);background:none;border:0;box-shadow:inset 0 0 0 1px var(--anatomy-lo);cursor:pointer}
+body.conn-open .conn-gear{color:var(--anatomy-strong);box-shadow:inset 0 0 0 1px var(--anatomy-strong)}
+.lf-tag .tg-r:has(.tg-ma){display:none}
+.lf-ctl,.line-bar .lb-seg:has([data-speed]),.line-bar [data-l="run"],.line-bar [data-l="reset"],.line-bar .lb-chk{display:none!important}
+.dash-oee .oee-parts button[data-part]{display:none}
+.dash-oee .oee-kpis small{display:none}

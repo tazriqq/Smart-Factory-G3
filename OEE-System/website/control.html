@@ -108,6 +108,13 @@ body[data-mode="control"] .mon{display:none!important}
 .pins{font:10.5px var(--mono);color:var(--muted);border-top:1px solid var(--faint);padding-top:8px}
 .sw{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .sw .btn{width:100%}
+.sw .btn.wide{grid-column:1/-1}
+.state[data-s="setup"]{background:var(--amber-bg);color:var(--amber)}
+.state[data-s="setup"] i{background:#f5c518}
+/* simulation */
+.sim{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px}
+.seg{display:inline-flex}.seg .btn{border-radius:0}.seg .btn:first-child{border-radius:7px 0 0 7px}.seg .btn:last-child{border-radius:0 7px 7px 0}
+.btn[data-armed]{color:var(--red);box-shadow:inset 0 0 0 1px var(--red)}
 input[type=range]{width:100%;margin:6px 0;accent-color:var(--strong)}
 
 /* QC */
@@ -118,6 +125,7 @@ input[type=range]{width:100%;margin:6px 0;accent-color:var(--strong)}
 .qc .rej b.bump{color:var(--red)}
 .qc .btn.ctl{margin-top:10px;width:100%;padding:12px}
 .qc .good .btn{color:var(--green)}.qc .rej .btn{color:var(--red)}
+.qc .undo{margin-top:6px;width:100%;padding:6px;font-size:12px;color:var(--muted)}
 
 /* logs */
 .logs{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px}
@@ -165,6 +173,14 @@ input[type=range]{width:100%;margin:6px 0;accent-color:var(--strong)}
     <span class="route" id="route"></span>
   </section>
 
+  <section class="card sim ctl" aria-label="Simulation">
+    <span class="k">Line simulation · บน dashboard</span>
+    <button class="btn" id="sim-run" type="button" aria-pressed="true">❚❚ Pause line</button>
+    <span class="seg" role="group" aria-label="Time speed"><button class="btn" data-speed="1" type="button">1×</button><button class="btn" data-speed="4" type="button" aria-pressed="true">4×</button><button class="btn" data-speed="10" type="button">10×</button></span>
+    <span class="grow"></span>
+    <button class="btn" id="sim-reset" type="button">⟲ Reset line</button>
+  </section>
+
   <section class="alarm" id="alarm" data-on="0" aria-live="polite">
     <span class="lamp"></span><b id="alarm-t">No alarm</b>
     <button class="btn ctl" id="al-btn" type="button" aria-pressed="false">Alarm / E-stop</button>
@@ -175,7 +191,7 @@ input[type=range]{width:100%;margin:6px 0;accent-color:var(--strong)}
 
   <section class="qc" aria-label="Quality check">
     <div class="card good"><div class="k">QC · Good</div><div class="count"><b id="q-good">—</b><span>presses</span></div>
-      <button class="btn ctl" id="q-good-btn" type="button">✓ GOOD</button><div class="pins">GPIO 16 · tactile</div></div>
+      <button class="btn ctl" id="q-good-btn" type="button">✓ GOOD</button><button class="btn ctl undo" id="q-undo-btn" type="button">↶ Undo last QC</button><div class="pins">GPIO 16 · tactile</div></div>
     <div class="card rej"><div class="k">QC · Reject</div><div class="count"><b id="q-rej">—</b><span>presses</span></div>
       <button class="btn ctl" id="q-rej-btn" type="button">✕ REJECT</button><div class="pins">GPIO 4 · tactile</div></div>
     <div class="card"><div class="k">All parts · line</div><div class="count"><b id="q-all">—</b><span class="mon">finished by 4 machines</span><span class="ctl">made on the dashboard</span></div><div class="pins" id="q-yield">yield —</div></div>
@@ -217,6 +233,7 @@ $("machines").innerHTML = MACHINES.map((m, i) => `
     <div class="sw ctl">
       <button class="btn" data-f="run" type="button" aria-pressed="true">RUN</button>
       <button class="btn" data-f="door" type="button" aria-pressed="false">🚪 เปิดฝา</button>
+      <button class="btn wide" data-f="setup" type="button" aria-pressed="false">🔧 Set / Maintenance</button>
     </div>
     <div class="mon"><div class="k">parts finished</div>
       <div class="count"><b data-f="cnt">—</b><span data-f="gap"></span></div></div>
@@ -321,12 +338,14 @@ function onBoard(text) {
 
 /* ---------- control: this page is the board ---------- */
 // what the dashboard follows; QC presses are counters, so it can tell new presses from a resent state
-const ctl = { pot: [512, 512, 512, 512], run: [1, 1, 1, 1], door: [0, 0, 0, 0], al: 0, good: 0, rej: 0, id: Math.random().toString(36).slice(2, 10) };
-try { Object.assign(ctl, JSON.parse(remember.get("ctl-state")) || {}, { good: 0, rej: 0, id: ctl.id }); } catch {}
+// sim / setup / reset / undo are for the dashboard's simulated line only (the board has no such switches)
+const ctl = { pot: [512, 512, 512, 512], run: [1, 1, 1, 1], door: [0, 0, 0, 0], al: 0, good: 0, rej: 0, undo: 0, reset: 0,
+  setup: [0, 0, 0, 0], sim: { run: 1, speed: 4 }, id: Math.random().toString(36).slice(2, 10) };
+try { Object.assign(ctl, JSON.parse(remember.get("ctl-state")) || {}, { good: 0, rej: 0, undo: 0, reset: 0, id: ctl.id }); } catch {}
 let sendTimer = 0;
 function sendCtl(note, cls) {
   if (note) event(note, cls);
-  remember.set("ctl-state", JSON.stringify({ pot: ctl.pot, run: ctl.run, door: ctl.door, al: ctl.al }));
+  remember.set("ctl-state", JSON.stringify({ pot: ctl.pot, run: ctl.run, door: ctl.door, al: ctl.al, setup: ctl.setup, sim: ctl.sim }));
   renderCtl();
   clearTimeout(sendTimer);
   sendTimer = setTimeout(publish, 80);     // a dragged slider sends at most ~12 times a second
@@ -344,21 +363,36 @@ function renderCtl() {
     const c = cards[i], pct = pctOf(ctl.pot[i]);
     c.run.setAttribute("aria-pressed", String(!!ctl.run[i])); c.run.textContent = ctl.run[i] ? "RUN" : "STOP";
     c.door.setAttribute("aria-pressed", String(!!ctl.door[i])); c.door.textContent = ctl.door[i] ? "🚪 ปิดฝา" : "🚪 เปิดฝา";
+    c.setup.setAttribute("aria-pressed", String(!!ctl.setup[i]));
     if (+c.slider.value !== pct) c.slider.value = pct;
     c.spd.textContent = pct + " %"; c.raw.textContent = ctl.pot[i];
     showState(c, i, !!ctl.run[i], !!ctl.door[i], !!ctl.al, pct, now);
+    if (ctl.setup[i] && !ctl.al) { c.state.dataset.s = "setup"; c.st.textContent = "SET / MAINTENANCE"; }
   });
   showQc(ctl.good, ctl.rej, "—");
+  $("sim-run").setAttribute("aria-pressed", String(!!ctl.sim.run)); $("sim-run").textContent = ctl.sim.run ? "❚❚ Pause line" : "▶ Run line";
+  document.querySelectorAll(".sim [data-speed]").forEach((b) => b.setAttribute("aria-pressed", String(+b.dataset.speed === ctl.sim.speed)));
 }
 cards.forEach((c, i) => {
   c.run.addEventListener("click", () => { ctl.run[i] = ctl.run[i] ? 0 : 1; sendCtl(`M${i + 1} run switch ${ctl.run[i] ? "ON" : "OFF"}`, ctl.run[i] ? "g" : ""); });
   c.door.addEventListener("click", () => { ctl.door[i] = ctl.door[i] ? 0 : 1; sendCtl(`M${i + 1} door ${ctl.door[i] ? "open" : "closed"}`, ctl.door[i] ? "" : "g"); });
+  c.setup.addEventListener("click", () => { ctl.setup[i] = ctl.setup[i] ? 0 : 1; sendCtl(`M${i + 1} ${ctl.setup[i] ? "set-up / maintenance" : "back in production"}`, ctl.setup[i] ? "" : "g"); });
   c.slider.addEventListener("input", () => { ctl.pot[i] = potOf(+c.slider.value); sendCtl(); });
   c.slider.addEventListener("change", () => event(`M${i + 1} speed ${c.slider.value} %`, "n"));
 });
 $("al-btn").addEventListener("click", () => { ctl.al = ctl.al ? 0 : 1; sendCtl(ctl.al ? "ALARM ON" : "alarm cleared", ctl.al ? "r" : "g"); });
 $("q-good-btn").addEventListener("click", () => { ctl.good++; bump($("q-good")); sendCtl(`QC good → ${ctl.good}`, "g"); });
 $("q-rej-btn").addEventListener("click", () => { ctl.rej++; bump($("q-rej")); sendCtl(`QC reject → ${ctl.rej}`, "r"); });
+$("q-undo-btn").addEventListener("click", () => { ctl.undo++; sendCtl("QC undo last", "n"); });
+$("sim-run").addEventListener("click", () => { ctl.sim.run = ctl.sim.run ? 0 : 1; sendCtl(ctl.sim.run ? "line running" : "line paused", "n"); });
+document.querySelectorAll(".sim [data-speed]").forEach((b) => b.addEventListener("click", () => { ctl.sim.speed = +b.dataset.speed; sendCtl(`time speed ${ctl.sim.speed}×`, "n"); }));
+// reset clears the dashboard's line counters, so it asks twice
+$("sim-reset").addEventListener("click", (e) => {
+  const b = e.currentTarget;
+  if (!b.hasAttribute("data-armed")) { b.setAttribute("data-armed", ""); b.textContent = "Click again to reset"; setTimeout(() => { b.removeAttribute("data-armed"); b.textContent = "⟲ Reset line"; }, 3000); return; }
+  b.removeAttribute("data-armed"); b.textContent = "⟲ Reset line";
+  ctl.reset++; sendCtl("line reset", "r");
+});
 
 /* ---------- mode: monitor while the ESP32 is sending, control otherwise ---------- */
 let boardStatus = "";

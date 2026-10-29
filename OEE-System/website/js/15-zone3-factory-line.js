@@ -1090,6 +1090,11 @@ const routeUi = (() => {
 })();
 
 window.__line = { MACHINES, BELTS, slots, placeTags, fit, oeeOf, speedChanged() {}, finish(i) { const s = st[i]; if (s && s.mode === 'run') s.t = Math.max(s.t, MACHINES[i].cycle); },
+  // the control page (control.html) runs the simulation: play / pause, time speed, reset, set-up per machine
+  setRunning(on) { if (running !== !!on) setRunning(!!on); },
+  setSpeed(n) { const b = document.querySelector(`.line-bar [data-speed="${n}"]`); if (b && speed !== n) b.click(); },
+  reset,
+  setSetup(i, on) { if (!slots[i] || !!window.__setup[i] === !!on) return; window.__setup[i] = !!on; slots[i].tag.querySelector('.tg-ma').setAttribute('aria-pressed', String(!!on)); },
   toggleDoor(i) { const s = slots[i]; if (s && !boardLive() && s.door.can()) s.door.toggle(); } };
 
 // mirrored drawings: turn their lettering back the right way round
