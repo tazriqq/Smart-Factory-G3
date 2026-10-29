@@ -215,10 +215,6 @@ docker compose down                  # หยุด (ข้อมูลยัง
 แก้รหัส MQTT ใน `.env` แล้ว → `docker compose up -d` (Mosquitto สร้างรหัสใหม่เอง) และแก้ `secrets.h` ของบอร์ดให้ตรง
 
 ## ขึ้น GitHub
-```bash
-cd OEE-System
-git init && git add . && git status     # ตรวจว่าไม่มี secrets.h, .env และ .mcp.json ในรายการ
-git commit -m "Smart factory OEE system"
-```
+repo: https://github.com/tazriqq/Smart-Factory-G3 · วิธี clone ไปใช้บนเครื่องใหม่ดูที่ [`README.md`](../README.md) นอกสุด
 - `.gitignore` กัน `secrets.h`, `server/.env` และ `.mcp.json` ไว้แล้ว — ก่อน push ให้ดู `git status` ทุกครั้ง
 - รหัส MQTT ของหน้าเว็บไม่ได้อยู่ในโค้ด — ผู้ใช้พิมพ์เอง และจำไว้ในเบราว์เซอร์ของเครื่องนั้นเท่านั้น
