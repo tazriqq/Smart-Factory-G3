@@ -23,6 +23,7 @@ services:
     environment:
       MQTT_ESP32_PASS: ${MQTT_ESP32_PASS}
       MQTT_WEB_PASS: ${MQTT_WEB_PASS}
+      MQTT_HUB_PASS: ${MQTT_HUB_PASS}
     # build the password file from .env, copy the ACL with the owner / mode mosquitto wants, then start
     command:
       - sh
@@ -32,6 +33,7 @@ services:
         touch /mosquitto/passwd && chmod 0700 /mosquitto/passwd
         mosquitto_passwd -b /mosquitto/passwd esp32 "$$MQTT_ESP32_PASS"
         mosquitto_passwd -b /mosquitto/passwd web "$$MQTT_WEB_PASS"
+        mosquitto_passwd -b /mosquitto/passwd hub "$$MQTT_HUB_PASS"
         cp /mosquitto/config/acl /mosquitto/acl && chmod 0700 /mosquitto/acl
         cp /mosquitto/config/acl_view /mosquitto/acl_view && chmod 0700 /mosquitto/acl_view
         chown mosquitto:mosquitto /mosquitto/passwd /mosquitto/acl /mosquitto/acl_view
@@ -110,6 +112,16 @@ services:
       retries: 12
 
   # every SHEETS_EVERY_MIN minutes: OEE summary from the database -> Google Sheet
+  # the one copy of the control page's state: takes the pages' commands in order, first one wins
+  control-hub:
+    build: ./control-hub
+    restart: unless-stopped
+    depends_on:
+      - mosquitto
+    environment:
+      MQTT_USER: hub
+      MQTT_PASS: ${MQTT_HUB_PASS}
+
   sheets-sync:
     build: ./sheets-sync
     restart: unless-stopped

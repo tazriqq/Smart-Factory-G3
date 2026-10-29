@@ -462,26 +462,52 @@ function onBoard(text) {
   prev = m;
 }
 
-/* ---------- control: this page is the board ---------- */
-// what the dashboard follows; QC presses are counters, so it can tell new presses from a resent state
-// sim / setup / reset / undo are for the dashboard's simulated line only (the board has no such switches)
+/* ---------- control: this page is the board ----------
+   The real state lives on the server (server/control-hub): every control page, on any device, shows the hub's
+   <line>/control and sends only commands to <line>/control/set. A change someone else made first wins; this
+   page's command is then ignored and the page shows the hub's value. sim / setup / reset / undo are for the
+   dashboard's simulated line only (the board has no such switches). */
+const ME = Math.random().toString(36).slice(2, 10);
 const ctl = { pot: [512, 512, 512, 512], run: [1, 1, 1, 1], door: [0, 0, 0, 0], al: 0, good: 0, rej: 0, undo: 0, reset: 0,
-  setup: [0, 0, 0, 0], sim: { run: 1, speed: 4 }, route: "1234-", useBoard: 1, id: Math.random().toString(36).slice(2, 10) };
-try { Object.assign(ctl, JSON.parse(remember.get("ctl-state")) || {}, { good: 0, rej: 0, undo: 0, reset: 0, id: ctl.id }); } catch {}
-let sendTimer = 0;
+  setup: [0, 0, 0, 0], sim: { run: 1, speed: 4 }, route: "1234-", useBoard: 1 };   // what this page shows
+let S = null, dragging = -1, sendTimer = 0;   // S: the hub's state as last received
+const sent = {};                              // values sent but not yet back from the hub
+const KEYS = () => [0, 1, 2, 3].flatMap((i) => ["pot", "run", "door", "setup"].map((k) => [`${k}.${i}`, ctl[k][i], S[k][i]]))
+  .concat([["al", ctl.al, S.al], ["useBoard", ctl.useBoard, S.useBoard], ["route", ctl.route, S.route], ["sim.run", ctl.sim.run, S.sim.run], ["sim.speed", ctl.sim.speed, S.sim.speed]]);
+function command(m) {
+  if (!client || !client.connected) return;
+  const text = JSON.stringify({ ...m, by: ME });
+  client.publish(BASE + "/control/set", text, { qos: 1 });
+  raw("→ " + text);
+}
+// a change on this page: send what differs from the hub (at most ~12 times a second while a slider moves)
 function sendCtl(note, cls) {
   if (note) event(note, cls);
-  remember.set("ctl-state", JSON.stringify({ pot: ctl.pot, run: ctl.run, door: ctl.door, al: ctl.al, setup: ctl.setup, sim: ctl.sim, route: ctl.route, useBoard: ctl.useBoard }));
   renderCtl();
+  if (!S) return;
   clearTimeout(sendTimer);
-  sendTimer = setTimeout(publish, 80);     // a dragged slider sends at most ~12 times a second
+  sendTimer = setTimeout(() => {
+    for (const [key, mine, hub] of KEYS()) {
+      if (mine === hub || sent[key] === mine) continue;
+      sent[key] = mine;
+      command({ cmd: "set", key, value: mine, base: (S.kv && S.kv[key]) || 0 });
+    }
+  }, 80);
 }
-// src tells every dashboard what to follow: "board" (connected here) or "sim" (this page's simulator)
-function publish() {
-  if (!client || !client.connected) return;
-  const text = JSON.stringify({ ...ctl, src: mode() === "monitor" ? "board" : "sim", ms: Math.round(performance.now()) });
-  client.publish(topics.control, text, { qos: 0, retain: true });
-  raw("→ " + text);
+// QC good / reject, undo, reset: counted on the hub, never in conflict
+function press(key) { ctl[key]++; command({ cmd: "press", key }); }
+// the hub's state: everyone's changes, in the order they reached the server
+function onState(text) {
+  let m; try { m = JSON.parse(text); } catch { return; }
+  if (!m.hub || !Array.isArray(m.pot)) return;
+  if (m.last && m.last.by === ME && !m.last.ok && (!S || S.ms !== m.ms)) event(`ignored: someone else changed ${m.last.key} first`, "r");
+  S = m;
+  for (const k of ["run", "door", "setup"]) ctl[k] = m[k].slice();
+  ctl.pot = m.pot.map((v, i) => (i === dragging ? ctl.pot[i] : v));
+  for (const k of ["al", "useBoard", "route", "good", "rej", "undo", "reset"]) ctl[k] = m[k];
+  ctl.sim = { ...m.sim };
+  for (const k in sent) delete sent[k];
+  renderCtl(); setMode();
 }
 function renderCtl() {
   const now = performance.now();
@@ -505,13 +531,13 @@ cards.forEach((c, i) => {
   c.run.addEventListener("click", () => { ctl.run[i] = ctl.run[i] ? 0 : 1; sendCtl(`M${i + 1} run switch ${ctl.run[i] ? "ON" : "OFF"}`, ctl.run[i] ? "g" : ""); });
   c.door.addEventListener("click", () => { ctl.door[i] = ctl.door[i] ? 0 : 1; sendCtl(`M${i + 1} door ${ctl.door[i] ? "open" : "closed"}`, ctl.door[i] ? "" : "g"); });
   c.setup.addEventListener("click", () => { ctl.setup[i] = ctl.setup[i] ? 0 : 1; sendCtl(`M${i + 1} ${ctl.setup[i] ? "set-up / maintenance" : "back in production"}`, ctl.setup[i] ? "" : "g"); });
-  c.slider.addEventListener("input", () => { ctl.pot[i] = potOf(+c.slider.value); sendCtl(); });
-  c.slider.addEventListener("change", () => event(`M${i + 1} speed ${c.slider.value} %`, "n"));
+  c.slider.addEventListener("input", () => { dragging = i; ctl.pot[i] = potOf(+c.slider.value); sendCtl(); });
+  c.slider.addEventListener("change", () => { dragging = -1; event(`M${i + 1} speed ${c.slider.value} %`, "n"); });
 });
 $("al-btn").addEventListener("click", () => { ctl.al = ctl.al ? 0 : 1; sendCtl(ctl.al ? "ALARM ON" : "alarm cleared", ctl.al ? "r" : "g"); });
-$("q-good-btn").addEventListener("click", () => { ctl.good++; bump($("q-good")); sendCtl(`QC good → ${ctl.good}`, "g"); });
-$("q-rej-btn").addEventListener("click", () => { ctl.rej++; bump($("q-rej")); sendCtl(`QC reject → ${ctl.rej}`, "r"); });
-$("q-undo-btn").addEventListener("click", () => { ctl.undo++; sendCtl("QC undo last", "n"); });
+$("q-good-btn").addEventListener("click", () => { press("good"); bump($("q-good")); sendCtl(`QC good → ${ctl.good}`, "g"); });
+$("q-rej-btn").addEventListener("click", () => { press("rej"); bump($("q-rej")); sendCtl(`QC reject → ${ctl.rej}`, "r"); });
+$("q-undo-btn").addEventListener("click", () => { press("undo"); sendCtl("QC undo last", "n"); });
 $("sim-run").addEventListener("click", () => { ctl.sim.run = ctl.sim.run ? 0 : 1; sendCtl(ctl.sim.run ? "line running" : "line paused", "n"); });
 document.querySelectorAll(".sim [data-speed]").forEach((b) => b.addEventListener("click", () => { ctl.sim.speed = +b.dataset.speed; sendCtl(`time speed ${ctl.sim.speed}×`, "n"); }));
 // reset clears the dashboard's line counters, so it asks twice
@@ -519,7 +545,7 @@ $("sim-reset").addEventListener("click", (e) => {
   const b = e.currentTarget;
   if (!b.hasAttribute("data-armed")) { b.setAttribute("data-armed", ""); b.textContent = "Click again to reset"; setTimeout(() => { b.removeAttribute("data-armed"); b.textContent = "⟲ Reset line"; }, 3000); return; }
   b.removeAttribute("data-armed"); b.textContent = "⟲ Reset line";
-  ctl.reset++; sendCtl("line reset", "r");
+  press("reset"); sendCtl("line reset", "r");
 });
 
 /* ---------- products: which machines make product A / B, in order ("12-34") ----------
@@ -577,8 +603,9 @@ setInterval(renderRoute, 500);
 /* ---------- mode: monitor while the ESP32 is sending, control otherwise ---------- */
 let boardStatus = "";
 // monitor = the board is connected here (seen sending, and "Connect board" chosen) · control = this page is the board
-const boardSeen = () => lastBoard && performance.now() - lastBoard < BOARD_QUIET_MS;
-const mode = () => (!client || !client.connected ? "off" : ctl.useBoard && boardSeen() ? "monitor" : "control");
+const boardSeen = () => (S ? !!S.board : false) || (lastBoard && performance.now() - lastBoard < BOARD_QUIET_MS);
+// the hub decides (src): monitor = the dashboards follow the board · control = they follow the control pages
+const mode = () => (!client || !client.connected || !S ? "off" : S.src === "board" ? "monitor" : "control");
 function setMode() {
   const m = mode(), seen = boardSeen();
   const b = $("use-board");
@@ -586,7 +613,7 @@ function setMode() {
   b.textContent = ctl.useBoard ? "Disconnect board · ใช้ตัวจำลอง" : "Connect board";
   b.disabled = !ctl.useBoard && !seen;
   b.title = !ctl.useBoard && !seen ? "ยังไม่เจอบอร์ด: เปิดบอร์ดและต่อ Wi-Fi ก่อน" : "";
-  $("mode-s").textContent = m === "off" ? "ใส่รหัส MQTT_WEB_PASS ด้านบนครั้งเดียว (เบราว์เซอร์จำไว้) แล้วปุ่มด้านล่างจะคุมหน้า OEE · ตอนนี้กดเตรียมค่าไว้ได้"
+  $("mode-s").textContent = m === "off" ? (client && client.connected ? "รอค่าจาก server (control-hub) …" : "ใส่รหัส MQTT_WEB_PASS ด้านบนครั้งเดียว (เบราว์เซอร์จำไว้) แล้วปุ่มด้านล่างจะคุมหน้า OEE")
     : m === "monitor" ? "หน้า OEE ใช้ข้อมูลจากบอร์ด · หน้านี้ดูสัญญาณอย่างเดียว"
     : seen ? "บอร์ดออนไลน์อยู่ แต่หน้า OEE ใช้ตัวจำลองจากหน้านี้ · กด Connect board เพื่อใช้บอร์ด"
     : ctl.useBoard ? "ไม่เจอบอร์ด: หน้านี้เป็นบอร์ดจำลอง หน้า OEE ทำตามปุ่มด้านล่าง · เจอบอร์ดเมื่อไรจะใช้บอร์ดเอง" : "หน้านี้เป็นบอร์ดจำลอง หน้า OEE ทำตามปุ่มด้านล่าง";
@@ -596,7 +623,6 @@ function setMode() {
   $("mode").dataset.m = m;
   $("mode-t").textContent = { off: "NOT LOGGED IN", monitor: "VIA BOARD · BOARD CONNECTED", control: "SIMULATOR · CONTROL VIA WEBSITE" }[m];
   if (m !== "monitor") { $("route").textContent = ""; prev = null; renderCtl(); }
-  publish();
   if (was && was !== "off") event(m === "monitor" ? "board connected · the dashboards follow the board" : m === "control" ? "simulator · the dashboards follow this page" : "logged out", "n");
 }
 $("use-board").addEventListener("click", () => { ctl.useBoard = ctl.useBoard ? 0 : 1; sendCtl(ctl.useBoard ? "connect board" : "disconnect board · simulator", "n"); setMode(); });
@@ -608,7 +634,6 @@ setInterval(() => {
   setMode();
   MACHINES.forEach((_, i) => { cards[i].since.textContent = since[i] ? fmtDur(now - since[i]) : ""; });
 }, 250);
-setInterval(publish, 2000);   // keep the retained state fresh; the dashboard retries a door it couldn't move yet
 
 /* ---------- MQTT ---------- */
 let client = null, topics = null;
@@ -635,17 +660,18 @@ async function connect() {
   pill("busy", "Connecting …");
   let lib; try { lib = await loadMqtt(); } catch (e) { return pill("err", e.message); }
   topics = { board: BASE + "/board", status: BASE + "/status", control: BASE + "/control" };
-  client = lib.connect(url, { clientId: "dpx-control-" + ctl.id, reconnectPeriod: 2000, connectTimeout: 8000, clean: true, ...(user ? { username: user, password: pass } : {}) });
+  client = lib.connect(url, { clientId: "dpx-control-" + ME, reconnectPeriod: 2000, connectTimeout: 8000, clean: true, ...(user ? { username: user, password: pass } : {}) });
   $("go").textContent = "Log out";
   client.on("connect", () => {
     pill("live", "Connected · MQTT");
-    client.subscribe([topics.board, topics.status], { qos: 0 });
+    client.subscribe([topics.board, topics.status, topics.control], { qos: 0 });
     event("connected to " + url, "n");
-    setMode(); publish();
+    setMode();
   });
   client.on("message", (t, payload) => {
     const text = payload.toString();
     if (t === topics.board) onBoard(text);
+    else if (t === topics.control) onState(text);
     else if (t === topics.status && text !== boardStatus) { boardStatus = text; event("board " + text, text === "online" ? "g" : "n"); }
   });
   client.on("offline", () => { pill("quiet", "MQTT · reconnecting …"); setMode(); });

@@ -64,7 +64,7 @@ flowchart LR
 ```
 ├── README.md                 ← ไฟล์นี้
 ├── OEE-System/               ← ตัวระบบทั้งหมด
-│   ├── server/               ← docker compose: Mosquitto, PostgreSQL/TimescaleDB, InfluxDB, Telegraf, Grafana, เว็บ, sheets-sync
+│   ├── server/               ← docker compose: Mosquitto, PostgreSQL/TimescaleDB, InfluxDB, Telegraf, Grafana, เว็บ, sheets-sync, control-hub
 │   ├── website/              ← หน้าเว็บ dashboard
 │   ├── esp32/                ← โค้ดบอร์ด (Arduino)
 │   └── google-sheets/        ← โค้ด Apps Script สำหรับ Google Sheet
@@ -297,6 +297,7 @@ docker compose start telegraf sheets-sync
 | **SIMULATOR · CONTROL VIA WEBSITE** — กด *Disconnect board* หรือไม่เจอบอร์ด: หน้านี้เป็นบอร์ดจำลอง (ปุ่มหมุน, RUN / STOP, ฝา, Set / Maintenance, Alarm, GOOD / REJECT / Undo, ไลน์จำลอง) | ใช้ตัวจำลองจากหน้า control แม้บอร์ดจะเปิดอยู่ · **Live · control via website** |
 | **NOT LOGGED IN** — ยังไม่ใส่รหัส: กดเตรียมค่าไว้ได้ แต่ยังไม่ส่ง | ไม่เปลี่ยน |
 
+- **ค่าจริงอยู่ที่ server ที่เดียว** (`control-hub` ใน docker compose): เปิดหน้า control กี่เครื่องก็ได้ ทุกเครื่องเห็นค่าเดียวกันแบบ real time · หน้า control ส่งแค่คำสั่ง ถ้าค่าเดียวกันถูกคนอื่นเปลี่ยนก่อน คำสั่งที่มาถึง server ทีหลังจะถูก **ignore** (ขึ้น `ignored: someone else changed … first` ในช่อง Events) · GOOD / REJECT / Undo / Reset นับทุกครั้ง
 - **หน้า control เป็นตัวตัดสิน** ว่า dashboard ทุกจอใช้ข้อมูลจากบอร์ดหรือจากตัวจำลอง (ปุ่ม *Connect board* / *Disconnect board* บนแถบสถานะ) · บอร์ดจริงยังบันทึกลง database ตามปกติไม่ว่าจะเลือกแบบไหน
 
 - **หน้า dashboard แสดงผลอย่างเดียว ไม่ต้อง login:** รับข้อมูลเองจาก MQTT ช่องอ่านอย่างเดียว (`/mqtt-view`) — ป้ายสถานะบอกว่าข้อมูลมาจาก `board` หรือ `control page` · ส่งคำสั่งใดๆ ไม่ได้ · ต้องการช่องเชื่อมต่อแบบเดิม (Bluetooth / USB / Wi-Fi) ให้เปิด `…/?connect`
