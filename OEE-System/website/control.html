@@ -246,7 +246,7 @@ main>*{min-width:0}
   </section>
 
   <section class="mode" id="mode" data-m="off" aria-live="polite">
-    <b id="mode-t">NOT CONNECTED</b><span id="mode-s">ยังไม่ได้ต่อ MQTT · กดปุ่มด้านล่างได้เลย ค่าจะส่งไป dashboard เมื่อต่อแล้ว</span>
+    <b id="mode-t">NOT LOGGED IN</b><span id="mode-s">ใส่รหัส MQTT_WEB_PASS ด้านบนครั้งเดียว (เบราว์เซอร์จำไว้) แล้วปุ่มด้านล่างจะคุมหน้า OEE · ตอนนี้กดเตรียมค่าไว้ได้</span>
     <span class="route" id="route"></span>
   </section>
 
@@ -577,8 +577,8 @@ function setMode() {
   const was = document.body.dataset.mode;
   document.body.dataset.mode = m;
   $("mode").dataset.m = m;
-  $("mode-t").textContent = { off: "NOT CONNECTED", monitor: "MONITOR · ESP32 ONLINE", control: "CONTROL · ESP32 OFFLINE" }[m];
-  $("mode-s").textContent = { off: "ยังไม่ได้ต่อ MQTT · กดปุ่มด้านล่างได้เลย ค่าจะส่งไป dashboard เมื่อต่อแล้ว", monitor: "บอร์ดคุมไลน์อยู่ หน้านี้ดูสัญญาณอย่างเดียว", control: "หน้านี้คุมไลน์จำลองบน dashboard แทนบอร์ด" }[m];
+  $("mode-t").textContent = { off: "NOT LOGGED IN", monitor: "BOARD ONLINE · MONITOR", control: "SIMULATOR · CONTROL VIA WEBSITE" }[m];
+  $("mode-s").textContent = { off: "ใส่รหัส MQTT_WEB_PASS ด้านบนครั้งเดียว (เบราว์เซอร์จำไว้) แล้วปุ่มด้านล่างจะคุมหน้า OEE · ตอนนี้กดเตรียมค่าไว้ได้", monitor: "บอร์ดคุมไลน์อยู่ หน้านี้ดูสัญญาณอย่างเดียว", control: "ไม่มีบอร์ด: หน้านี้เป็นบอร์ดจำลอง หน้า OEE ทำตามปุ่มด้านล่าง" }[m];
   if (m !== "monitor") { $("route").textContent = ""; prev = null; renderCtl(); if (m === "control") publish(); }
   if (was && was !== "off") event(m === "monitor" ? "ESP32 online · monitor mode" : m === "control" ? "ESP32 offline · control mode" : "disconnected", "n");
 }

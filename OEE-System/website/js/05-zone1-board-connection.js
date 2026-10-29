@@ -36,7 +36,7 @@ setInterval(() => {
   // the control page resends every 2 s, but a browser slows a hidden tab down to about once a second or less
   const now = performance.now(), fromControl = !window.__board.live && now - controlAt < 10000, quiet = !fromControl && now - lastData > 2500;
   const via = fromControl ? " · control page" : quiet ? " · no data" : " · receiving";
-  if (viewOnly) setPill(quiet ? "quiet" : "on", fromControl ? "Live · control page" : quiet ? "Waiting for the board or the control page" : "Live · board");
+  if (viewOnly) setPill(quiet ? "quiet" : "on", fromControl ? "Live · control via website" : quiet ? "Waiting for the board or the control page" : "Live · board");
   else setPill(quiet ? "quiet" : "on", "Connected · " + NAMES[conn.kind] + via);
 }, 500);
 const lastAdc = Array(COUNT).fill(null);
