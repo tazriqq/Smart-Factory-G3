@@ -1,0 +1,2 @@
+# the dashboard's read-only listener (9002, no login): it can only listen to the line's topics
+topic read group3/dpx/#

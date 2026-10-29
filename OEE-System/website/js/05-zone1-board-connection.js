@@ -36,7 +36,8 @@ setInterval(() => {
   // the control page resends every 2 s, but a browser slows a hidden tab down to about once a second or less
   const now = performance.now(), fromControl = !window.__board.live && now - controlAt < 10000, quiet = !fromControl && now - lastData > 2500;
   const via = fromControl ? " · control page" : quiet ? " · no data" : " · receiving";
-  setPill(quiet ? "quiet" : "on", "Connected · " + NAMES[conn.kind] + via);
+  if (viewOnly) setPill(quiet ? "quiet" : "on", fromControl ? "Live · control page" : quiet ? "Waiting for the board or the control page" : "Live · board");
+  else setPill(quiet ? "quiet" : "on", "Connected · " + NAMES[conn.kind] + via);
 }, 500);
 const lastAdc = Array(COUNT).fill(null);
 
@@ -126,6 +127,11 @@ window.__board = (() => {
 })();
 window.__gate = (i) => window.__board.gate(i);
 const remember = { get(k) { try { return localStorage.getItem(k); } catch { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch {} } };
+// The dashboard only shows the line: it listens on the server's read-only MQTT (/mqtt-view, no login), where the
+// board and the control page (control.html, the one place people log in) come in. ?connect brings back the
+// connection settings (Bluetooth / USB / Wi-Fi / MQTT with a password).
+const viewOnly = !/[?&]connect\b/.test(location.search);
+if (viewOnly) document.body.classList.add("view-only");
 if (remember.get("cnc-knob-source") in NAMES) sourceSel.value = remember.get("cnc-knob-source");
 // default broker: Mosquitto on the server that serves this page (or the server computer when opened as a file);
 // over https (the Cloudflare tunnel) nginx passes /mqtt on to it
@@ -264,7 +270,7 @@ async function openMqtt(my) {
   if (!topic) throw new Error("enter the MQTT topic");
   if (location.protocol === "https:" && url.startsWith("ws://")) throw new Error("an https page needs a wss:// broker address");
   const user = mqttUser.value.trim(), pass = mqttPass.value;
-  remember.set("cnc-mqtt-url", url); remember.set("cnc-mqtt-topic", topic); remember.set("cnc-mqtt-user", user); remember.set("cnc-mqtt-pass", pass);
+  if (!viewOnly) { remember.set("cnc-mqtt-url", url); remember.set("cnc-mqtt-topic", topic); remember.set("cnc-mqtt-user", user); remember.set("cnc-mqtt-pass", pass); }
   const lib = await loadMqtt();
   if (my !== gen) return;
   const client = lib.connect(url, { clientId: "dpx-web-" + Math.random().toString(16).slice(2, 10), reconnectPeriod: 2000, connectTimeout: 8000, clean: true, ...(user ? { username: user, password: pass } : {}) });
@@ -309,6 +315,7 @@ function followControl(m) {
   if (Array.isArray(m.door)) for (let i = 0; i < 4; i++) if (!!m.door[i] !== !!window.__door?.[i]) window.__line?.toggleDoor?.(i);
   const q = lastControl && lastControl.id === m.id ? lastControl : null;
   const L = window.__line;
+  if (typeof m.route === "string") L?.setRouteText?.(m.route);
   if (Array.isArray(m.setup)) for (let i = 0; i < 4; i++) L?.setSetup?.(i, !!m.setup[i]);
   if (m.sim) { L?.setRunning?.(m.sim.run !== 0); if (m.sim.speed) L?.setSpeed?.(m.sim.speed); }
   if (q) {
@@ -344,6 +351,7 @@ button.addEventListener("click", async () => {
     conn = null; syncSource();
     setPill(error && error.name === "NotFoundError" ? "off" : "error", error && error.name === "NotFoundError" ? "Not connected" : "Could not connect");
     if (error && error.name === "NotFoundError") return say("No device chosen.");
+    if (viewOnly) { setPill("error", "Server not reachable · retrying"); setTimeout(autoView, 5000); return; }
     document.body.classList.add("conn-open");
     const hint = kind === "usb" ? " Close the Arduino IDE Serial Monitor if it is open." : kind === "wifi" ? "" : kind === "mqtt" ? " Check the broker address (the WebSocket one, e.g. wss://xxxx.s1.eu.hivemq.cloud:8884/mqtt), the user and the password." : " Check that the ESP32 is powered, Bluetooth is on in the computer, and the board is not connected to another device.";
     say("Could not connect: " + (error && error.message ? error.message : error) + "." + hint);
@@ -352,16 +360,27 @@ button.addEventListener("click", async () => {
 syncSource();
 // the connection settings stay folded behind ⚙ next to the status pill; they open when there is something to do
 status.textContent = "";
-const gear = Object.assign(document.createElement("button"), { type: "button", className: "conn-gear", textContent: "⚙", title: "Connection settings" });
-gear.setAttribute("aria-label", "Connection settings");
-pill.after(gear);
-const toggleConn = () => document.body.classList.toggle("conn-open");
-gear.addEventListener("click", toggleConn);
-pill.addEventListener("click", toggleConn);
-setTimeout(() => { if (!conn) document.body.classList.add("conn-open"); }, 4000);   // not connected by itself: show how
+if (!viewOnly) {
+  const gear = Object.assign(document.createElement("button"), { type: "button", className: "conn-gear", textContent: "⚙", title: "Connection settings" });
+  gear.setAttribute("aria-label", "Connection settings");
+  pill.after(gear);
+  const toggleConn = () => document.body.classList.toggle("conn-open");
+  gear.addEventListener("click", toggleConn);
+  pill.addEventListener("click", toggleConn);
+  setTimeout(() => { if (!conn) document.body.classList.add("conn-open"); }, 4000);   // not connected by itself: show how
+}
+// view only: the server that serves this page (the server computer when opened as a file), no login
+function autoView() {
+  if (conn) return;
+  const host = location.host || "192.168.1.107:8080";
+  sourceSel.value = "mqtt"; syncSource();
+  mqttUrl.value = (location.protocol === "https:" ? "wss://" : "ws://") + host + "/mqtt-view";
+  mqttUser.value = ""; mqttPass.value = "";
+  button.click();
+}
 // opened from the board itself (http://<board>/, see esp32/build_web.py): it answers /data, so read it over Wi-Fi at once;
 // otherwise, with an MQTT password remembered, connect by MQTT (the board, or the control page, comes in that way)
-const autoMqtt = () => { if (!conn && sourceSel.value === "mqtt" && mqttPass.value) button.click(); };
+const autoMqtt = () => { if (viewOnly) return autoView(); if (!conn && sourceSel.value === "mqtt" && mqttPass.value) button.click(); };
 if (location.protocol === "https:" && !remember.get("cnc-knob-source")) { sourceSel.value = "mqtt"; syncSource(); }
 if (location.protocol === "http:") {
   fetch("/data", { cache: "no-store" }).then((r) => (r.ok ? r.text() : "")).then((t) => {

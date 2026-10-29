@@ -111,6 +111,16 @@ body[data-mode="control"] .mon{display:none!important}
 .sw .btn.wide{grid-column:1/-1}
 .state[data-s="setup"]{background:var(--amber-bg);color:var(--amber)}
 .state[data-s="setup"] i{background:#f5c518}
+/* products: routes */
+.rt-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:8px}
+.rp{display:inline-grid;place-items:center;min-width:22px;height:22px;font:600 12px var(--mono);font-style:normal;color:#fff;background:var(--pa);border-radius:5px}
+.rp.b{background:var(--pb)}
+.rt-row .btn{position:relative;min-width:44px}
+.rt-row[data-p="0"] .btn[aria-pressed="true"]{background:var(--pa);color:#fff}
+.rt-row[data-p="1"] .btn[aria-pressed="true"]{background:var(--pb);color:#fff}
+.rt-row .btn[data-n]:not([data-n=""])::after{content:attr(data-n);position:absolute;top:-7px;right:-6px;min-width:15px;height:15px;border-radius:8px;font-size:9px;line-height:15px;color:var(--strong);background:var(--card);box-shadow:0 0 0 1px var(--line)}
+.rt-seq{font:12px var(--mono);font-style:normal;color:var(--muted);margin-left:6px}
+#rt-msg{font:12px var(--mono);color:var(--muted)}
 /* simulation */
 .sim{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px}
 .seg{display:inline-flex}.seg .btn{border-radius:0}.seg .btn:first-child{border-radius:7px 0 0 7px}.seg .btn:last-child{border-radius:0 7px 7px 0}
@@ -179,6 +189,14 @@ input[type=range]{width:100%;margin:6px 0;accent-color:var(--strong)}
     <span class="seg" role="group" aria-label="Time speed"><button class="btn" data-speed="1" type="button">1×</button><button class="btn" data-speed="4" type="button" aria-pressed="true">4×</button><button class="btn" data-speed="10" type="button">10×</button></span>
     <span class="grow"></span>
     <button class="btn" id="sim-reset" type="button">⟲ Reset line</button>
+  </section>
+
+  <section class="card" aria-label="Products">
+    <div class="log-h"><span class="k">Products · เส้นทางผลิต</span><span class="grow"></span><span id="rt-msg">กดเครื่องตามลำดับ · กดซ้ำเพื่อเอาออก</span></div>
+    <div class="rt-row" data-p="0"><i class="rp">A</i></div>
+    <div class="rt-row" data-p="1"><i class="rp b">B</i></div>
+    <div class="conn" style="margin-top:10px"><button class="btn" id="rt-apply" type="button">Apply</button><button class="btn" id="rt-undo" type="button">Undo</button>
+      <span class="hint" style="margin:0">1 เครื่องอยู่ได้ product เดียว · Apply แล้วชิ้นงานค้างบนสายพานหายไป</span></div>
   </section>
 
   <section class="alarm" id="alarm" data-on="0" aria-live="polite">
@@ -340,12 +358,12 @@ function onBoard(text) {
 // what the dashboard follows; QC presses are counters, so it can tell new presses from a resent state
 // sim / setup / reset / undo are for the dashboard's simulated line only (the board has no such switches)
 const ctl = { pot: [512, 512, 512, 512], run: [1, 1, 1, 1], door: [0, 0, 0, 0], al: 0, good: 0, rej: 0, undo: 0, reset: 0,
-  setup: [0, 0, 0, 0], sim: { run: 1, speed: 4 }, id: Math.random().toString(36).slice(2, 10) };
+  setup: [0, 0, 0, 0], sim: { run: 1, speed: 4 }, route: "1234-", id: Math.random().toString(36).slice(2, 10) };
 try { Object.assign(ctl, JSON.parse(remember.get("ctl-state")) || {}, { good: 0, rej: 0, undo: 0, reset: 0, id: ctl.id }); } catch {}
 let sendTimer = 0;
 function sendCtl(note, cls) {
   if (note) event(note, cls);
-  remember.set("ctl-state", JSON.stringify({ pot: ctl.pot, run: ctl.run, door: ctl.door, al: ctl.al, setup: ctl.setup, sim: ctl.sim }));
+  remember.set("ctl-state", JSON.stringify({ pot: ctl.pot, run: ctl.run, door: ctl.door, al: ctl.al, setup: ctl.setup, sim: ctl.sim, route: ctl.route }));
   renderCtl();
   clearTimeout(sendTimer);
   sendTimer = setTimeout(publish, 80);     // a dragged slider sends at most ~12 times a second
@@ -393,6 +411,58 @@ $("sim-reset").addEventListener("click", (e) => {
   b.removeAttribute("data-armed"); b.textContent = "⟲ Reset line";
   ctl.reset++; sendCtl("line reset", "r");
 });
+
+/* ---------- products: which machines make product A / B, in order ("12-34") ----------
+   ESP32 online: the route goes to the board (MQTT <line>/route/set) and the dashboards follow the board.
+   ESP32 offline: it goes with this page's state, and the dashboards' simulated line follows it. */
+function parseRoute(t) {
+  const r = [[], []]; let p = 0;
+  for (const c of String(t || "").replace(/\s/g, "")) {
+    if (c === "-") { if (++p > 1) return null; continue; }
+    const i = "1234".indexOf(c);
+    if (i < 0 || r[0].includes(i) || r[1].includes(i)) return null;
+    r[p].push(i);
+  }
+  return r[0].length + r[1].length ? r : null;
+}
+const routeText = (r) => r.map((ms) => ms.map((i) => i + 1).join("")).join("-");
+const liveRoute = () => (mode() === "monitor" ? prev?.route : ctl.route) || "1234-";
+let draft = parseRoute(ctl.route) || [[0, 1, 2, 3], []], shownRoute = "", waitRoute = null;
+document.querySelectorAll(".rt-row").forEach((row) => row.insertAdjacentHTML("beforeend",
+  MACHINES.map((m, i) => `<button class="btn" type="button" data-i="${i}" title="${m.no} ${m.name}">${m.no}</button>`).join("") + `<em class="rt-seq"></em>`));
+function renderRoute() {
+  const live = liveRoute();
+  if (live !== shownRoute) {                       // the line's route changed: start editing from it
+    shownRoute = live; draft = parseRoute(live) || draft;
+    if (waitRoute === live) { waitRoute = null; $("rt-msg").textContent = "the board took it"; }
+  }
+  document.querySelectorAll(".rt-row").forEach((row) => {
+    const p = +row.dataset.p;
+    row.querySelectorAll(".btn").forEach((b) => { const k = draft[p].indexOf(+b.dataset.i); b.setAttribute("aria-pressed", String(k >= 0)); b.dataset.n = k >= 0 ? k + 1 : ""; });
+    row.querySelector(".rt-seq").textContent = draft[p].length ? draft[p].map((i) => MACHINES[i].no).join(" → ") + " → out" : "— not made";
+  });
+  const changed = routeText(draft) !== live;
+  $("rt-apply").disabled = !changed || mode() === "off"; $("rt-undo").disabled = !changed;
+}
+document.querySelectorAll(".rt-row").forEach((row) => row.addEventListener("click", (e) => {
+  const b = e.target.closest(".btn"); if (!b) return;
+  const p = +row.dataset.p, i = +b.dataset.i, k = draft[p].indexOf(i);
+  if (k >= 0) draft[p].splice(k, 1); else { draft[1 - p] = draft[1 - p].filter((x) => x !== i); draft[p].push(i); }
+  renderRoute();
+}));
+$("rt-undo").addEventListener("click", () => { draft = parseRoute(liveRoute()) || draft; renderRoute(); });
+$("rt-apply").addEventListener("click", () => {
+  if (!draft[0].length && !draft[1].length) { $("rt-msg").textContent = "pick at least one machine"; return; }
+  const text = routeText(draft);
+  if (mode() === "monitor") {
+    waitRoute = text;
+    client.publish(BASE + "/route/set", text, { qos: 1 });
+    $("rt-msg").textContent = "sending to the board …"; event("route → " + text + " (to the board)", "b");
+    setTimeout(() => { if (waitRoute === text) { waitRoute = null; $("rt-msg").textContent = "the board did not take it"; } }, 4000);
+  } else { ctl.route = text; sendCtl("route → " + text, "b"); $("rt-msg").textContent = "the dashboards follow it"; }
+  renderRoute();
+});
+setInterval(renderRoute, 500);
 
 /* ---------- mode: monitor while the ESP32 is sending, control otherwise ---------- */
 let boardStatus = "";
@@ -463,7 +533,7 @@ $("go").addEventListener("click", connect);
 $("pass").addEventListener("keydown", (e) => { if (e.key === "Enter" && !client) connect(); });
 $("ev-clear").addEventListener("click", () => { $("events").innerHTML = ""; });
 $("raw-pause").addEventListener("click", (e) => { rawPaused = !rawPaused; e.target.setAttribute("aria-pressed", String(rawPaused)); e.target.textContent = rawPaused ? "Resume" : "Pause"; });
-renderCtl();
+renderCtl(); renderRoute();
 if ($("pass").value) connect();
 </script>
 </body>

@@ -1095,6 +1095,7 @@ window.__line = { MACHINES, BELTS, slots, placeTags, fit, oeeOf, speedChanged() 
   setRunning(on) { if (running !== !!on) setRunning(!!on); },
   setSpeed(n) { const b = document.querySelector(`.line-bar [data-speed="${n}"]`); if (b && speed !== n) b.click(); },
   reset,
+  setRouteText(t) { const r = parseRoute(t); if (r) setRoute(r); },
   setSetup(i, on) { if (!slots[i] || !!window.__setup[i] === !!on) return; window.__setup[i] = !!on; slots[i].tag.querySelector('.tg-ma').setAttribute('aria-pressed', String(!!on)); },
   toggleDoor(i) { const s = slots[i]; if (s && !boardLive() && s.door.can()) s.door.toggle(); } };
 

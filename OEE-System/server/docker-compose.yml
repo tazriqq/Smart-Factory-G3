@@ -18,6 +18,7 @@ services:
     volumes:
       - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
       - ./mosquitto/acl:/mosquitto/config/acl:ro
+      - ./mosquitto/acl_view:/mosquitto/config/acl_view:ro
       - mosquitto-data:/mosquitto/data
     environment:
       MQTT_ESP32_PASS: ${MQTT_ESP32_PASS}
@@ -32,7 +33,8 @@ services:
         mosquitto_passwd -b /mosquitto/passwd esp32 "$$MQTT_ESP32_PASS"
         mosquitto_passwd -b /mosquitto/passwd web "$$MQTT_WEB_PASS"
         cp /mosquitto/config/acl /mosquitto/acl && chmod 0700 /mosquitto/acl
-        chown mosquitto:mosquitto /mosquitto/passwd /mosquitto/acl
+        cp /mosquitto/config/acl_view /mosquitto/acl_view && chmod 0700 /mosquitto/acl_view
+        chown mosquitto:mosquitto /mosquitto/passwd /mosquitto/acl /mosquitto/acl_view
         exec mosquitto -c /mosquitto/config/mosquitto.conf
 
   web:

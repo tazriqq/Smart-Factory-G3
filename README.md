@@ -10,7 +10,7 @@ flowchart LR
     end
 
     subgraph server["เครื่อง server · docker compose (OEE-System/server)"]
-        mq["Mosquitto<br/>MQTT :1883 · WebSocket :9001"]
+        mq["Mosquitto<br/>MQTT :1883 · WebSocket :9001<br/>อ่านอย่างเดียว :9002 (/mqtt-view)"]
         web["nginx<br/>หน้าเว็บ :8080"]
         tg["Telegraf"]
         pg[("PostgreSQL / TimescaleDB :5432<br/>ที่เก็บหลัก + คำนวณ OEE")]
@@ -39,7 +39,7 @@ flowchart LR
     ss -- HTTPS --> gs
     pg -. "อ่านอย่างเดียว (reader)" .-> claude
     web -- "โหลดหน้าเว็บ" --> browser
-    mq -- "WebSocket :9001 (ข้อมูลสด)" --> browser
+    mq -- "/mqtt-view (อ่านอย่างเดียว ไม่ต้อง login)" --> browser
     hw -. "หรือต่อตรง: USB / Bluetooth" .-> browser
     bweb -. "http://192.168.1.200 (ไม่ต้องมี server)" .-> browser
     web --> cf
@@ -207,8 +207,8 @@ server ส่งสรุป OEE ขึ้นชีตทุก 15 นาที 
 
 | อะไร | ที่อยู่ | login |
 |---|---|---|
-| หน้าเว็บ | `http://<SERVER_IP>:8080` | Board via **MQTT** → user `web` · password = `MQTT_WEB_PASS` → **Connect** |
-| หน้า control | `http://<SERVER_IP>:8080/control.html` | user `web` + `MQTT_WEB_PASS` (เหมือนหน้าเว็บ) |
+| หน้าเว็บ (dashboard) | `http://<SERVER_IP>:8080` | ไม่ต้อง login — แสดงผลอย่างเดียว รับข้อมูลเอง |
+| หน้า control | `http://<SERVER_IP>:8080/control.html` | user `web` + `MQTT_WEB_PASS` — ที่เดียวที่ต้อง login และสั่งงานได้ |
 | หน้าเว็บจากบอร์ด | `http://192.168.1.200` | ไม่ต้อง login — ต่อบอร์ดผ่าน Wi-Fi ให้เอง |
 | หน้าเว็บจากที่ไหนก็ได้ | `https://oee.<domain>` · `https://control.<domain>` | ดูขั้นตอนที่ 13 |
 | Grafana | `http://<SERVER_IP>:3000` | `admin` / `GRAFANA_ADMIN_PASSWORD` |
@@ -269,9 +269,9 @@ docker compose start telegraf sheets-sync
 
 เครื่อง 4 เครื่องแบ่งผลิตได้ 2 product (A / B) และเลือกได้ว่าแต่ละ product ผ่านเครื่องไหน เรียงลำดับอย่างไร
 
-1. บนหน้าเว็บ แท็บ **Line** → กล่อง **Products · เส้นทางผลิต** มุมขวาบน → กดเพื่อเปิด
+1. หน้า **control** → การ์ด **Products · เส้นทางผลิต**
 2. แถว **A**: กดเครื่องตามลำดับที่ต้องการ (เช่น 01 แล้ว 02) · แถว **B**: กดเครื่องที่เหลือ (เช่น 03 แล้ว 04) — กดซ้ำเพื่อเอาออก
-3. กด **Apply** → สายพานบนหน้าจอวาดใหม่ตามเส้นทาง (A สีฟ้า, B สีม่วง) และมีกล่อง Output + กอง QC / FG / NG แยกของแต่ละ product
+3. กด **Apply** → สายพานบน dashboard วาดใหม่ตามเส้นทาง (A สีฟ้า, B สีม่วง) และมีกล่อง Output + กอง QC / FG / NG แยกของแต่ละ product
 
 | ตัวอย่าง | ความหมาย |
 |---|---|
@@ -297,8 +297,9 @@ docker compose start telegraf sheets-sync
 | **offline** (ไม่มีข้อมูลจากบอร์ด 3 วินาที) | **CONTROL**: ปุ่มหมุนความเร็ว, RUN / STOP, เปิด / ปิดฝา, Set / Maintenance, Alarm, GOOD / REJECT / Undo, ไลน์จำลอง (Pause / 1× 4× 10× / Reset) | ไลน์จำลองทำตามหน้า control |
 | **online** | **MONITOR**: ดูสัญญาณทุกตัวที่บอร์ดส่ง (สถานะเครื่อง, ชิ้นงาน, ความเร็ว, alarm, QC, events, raw lines) ควบคุมไม่ได้ | ไลน์ทำตามบอร์ด |
 
-- หน้า dashboard มีไว้ดูอย่างเดียว: ปุ่มควบคุมทั้งหมดอยู่หน้า control · การตั้งค่าการเชื่อมต่อซ่อนอยู่หลังปุ่ม **⚙** ข้างป้ายสถานะ (เปิดให้เองถ้ายังต่อไม่ได้)
-- ทั้ง 2 หน้า login MQTT ด้วย user `web` + `MQTT_WEB_PASS` — เบราว์เซอร์จำรหัสไว้ เปิดครั้งต่อไปต่อให้เอง
+- **หน้า dashboard แสดงผลอย่างเดียว ไม่ต้อง login:** รับข้อมูลเองจาก MQTT ช่องอ่านอย่างเดียว (`/mqtt-view`) — ป้ายสถานะบอกว่าข้อมูลมาจาก `board` หรือ `control page` · ส่งคำสั่งใดๆ ไม่ได้ · ต้องการช่องเชื่อมต่อแบบเดิม (Bluetooth / USB / Wi-Fi) ให้เปิด `…/?connect`
+- **หน้า control เป็นที่เดียวที่ต้อง login** (user `web` + `MQTT_WEB_PASS`, เบราว์เซอร์จำไว้) และเป็นที่เดียวที่สั่งงานได้ รวมถึงเลือกเส้นทาง 2 product (การ์ด **Products**) — กล่อง Products บน dashboard แสดงเส้นทางอย่างเดียว
+- ⚠️ ในวง Wi-Fi ใครเปิด dashboard ก็เห็นข้อมูลไลน์ (แต่สั่งงานไม่ได้) · จากข้างนอกกันด้วย Cloudflare Access
 - หน้า control ส่งค่าไปที่ MQTT `group3/dpx/line1/control` (retained) — dashboard ที่เปิดทีหลังก็ได้ค่าล่าสุดทันที
 - ค่าจากหน้า control **ไม่ถูกบันทึกลง database** (เป็นการจำลอง) — บันทึกเฉพาะตอนใช้บอร์ดจริง
 - เปิดในวง Wi-Fi: `http://<SERVER_IP>:8080/control.html` · จากที่ไหนก็ได้: `https://control.<domain>` (เพิ่ม route ใน Cloudflare ตามขั้นตอนที่ 13)

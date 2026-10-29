@@ -383,3 +383,8 @@ body.conn-open .conn-gear{color:var(--anatomy-strong);box-shadow:inset 0 0 0 1px
 .dash-bar .lf-tabs kbd{font-size:9.5px;padding:0 4px}
 body.od-open .dash-bar .lf-tabs{top:8px;box-shadow:0 0 0 1px var(--anatomy-hi),0 8px 24px rgba(0,0,0,.35);background:var(--anatomy-card)}
 .dash-bar .conn-pill{margin-left:auto}
+/* view only (the default, see 05-zone1-board-connection.js): no connection settings, routes are shown, not edited */
+body.view-only .dash-bar :is(.link-check,#board-addr,#mqtt-url,#mqtt-topic,#mqtt-user,#mqtt-pass,#connect,#status){display:none!important}
+body.view-only .conn-pill{cursor:default}
+body.view-only .lf-route :is(.rt-body,.rt-h b){display:none!important}
+body.view-only .lf-route .rt-h{cursor:default}
