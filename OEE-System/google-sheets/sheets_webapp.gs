@@ -18,7 +18,7 @@ const PERCENT = ['availability', 'performance', 'quality', 'oee'];   // columns 
 
 const NOTES = [
   ['What the tabs mean (for people and for Claude)'],
-  ['This sheet is a summary. The full data (every signal, every event, every minute) is in the PostgreSQL database on the server; the server rewrites these tabs every 15 minutes, so edits made here are lost.'],
+  ['This sheet is a summary. The full data (every signal, every event, every minute) is in the PostgreSQL database on the server; the server rewrites these tabs every 15 minutes, so edits made here are lost. Each tab holds at most SHEETS_MAX_ROWS rows (1000 unless changed in server/.env): the newest are kept and the oldest drop off, so the sheet stays small.'],
   ['Events: the last 500 button / switch presses, newest first, updated about 10 seconds after each press. machine 0 = the whole line. event = part (a machine finished a part; the board makes them by itself), run_on / run_off (run switch), door_open / door_close (door button; an open door stops the machine), alarm_on / alarm_off (line E-stop), output (the last machine of a product route finished that product), good / reject (QC: the latest output part checked good / scrap), boot (the board restarted), route (the routes changed: route 12-34 = product A through machines 1 then 2, product B through 3 then 4). product = A / B.'],
   ['OEE_Daily: one row per machine (and the product it worked on) per day (Thailand date), all history. OEE_Hourly: the same per hour, last 14 days. An empty product = the machine was in no route (idle), or the row is from before products existed.'],
   ['Products: one row per product per day: output = parts off the end of its route, good / reject = QC presses for it, quality = good / (good + reject).'],

@@ -187,6 +187,7 @@ OEE-System/
 - แก้ `schema.sql` แล้ว: `docker compose exec timescaledb sh /docker-entrypoint-initdb.d/init.sh` (รันซ้ำได้ ไม่ลบข้อมูล)
 
 ### Google Sheet (สรุป, server เขียนทับทุก 15 นาที)
+ทุกแท็บมีไม่เกิน `SHEETS_MAX_ROWS` แถว (ค่าเริ่มต้น 1000 ใน `server/.env`) — เก็บแถวใหม่สุด ของเก่าหลุดออก (first in, first out) ชีตจึงเล็กตลอด (ไม่ถึง 1 MB) ข้อมูลทั้งหมดยังอยู่ใน database
 | แท็บ | มาจาก |
 |---|---|
 | Events | กดปุ่ม / สวิตช์ 500 ครั้งล่าสุด (ใหม่สุดอยู่บน) — ขึ้นชีตภายใน ~10 วินาทีหลังกด (`SHEETS_EVENTS_ROWS`, `SHEETS_EVENTS_GAP_S`) |

@@ -8,6 +8,8 @@
 #   Machines    names and ideal_cycle_s (edit them in the database, not in the sheet)
 #   Events      the last SHEETS_EVENTS_ROWS button / switch presses, newest first; sent again within
 #               ~SHEETS_EVENTS_GAP_S seconds of a new one, so a press can be seen in the sheet straight away
+# No tab gets more than SHEETS_MAX_ROWS rows: the newest are kept, the oldest drop off (first in, first out), so
+# the sheet stays small however long the line runs. The database keeps everything.
 
 import json
 import os
@@ -25,6 +27,7 @@ EVERY = max(1, int(os.environ.get("SHEETS_EVERY_MIN", "15"))) * 60
 HOURLY_DAYS = int(os.environ.get("SHEETS_HOURLY_DAYS", "14"))
 EVENTS_ROWS = int(os.environ.get("SHEETS_EVENTS_ROWS", "500"))
 EVENTS_GAP = max(5, int(os.environ.get("SHEETS_EVENTS_GAP_S", "10")))
+MAX_ROWS = max(10, int(os.environ.get("SHEETS_MAX_ROWS", "1000")))
 
 RATIOS = "availability, performance, quality, oee"
 TABS = {
@@ -68,10 +71,11 @@ def read_tabs(names):
         for name in names:
             sql = TABS[name]
             cur.execute(sql, (PARAMS[name],) if name in PARAMS else None)
-            tabs[name] = {
-                "header": [c.name for c in cur.description],
-                "rows": [[plain(v) for v in row] for row in cur.fetchall()],
-            }
+            rows = [[plain(v) for v in row] for row in cur.fetchall()]
+            # keep the newest: Events comes newest first, the other tabs oldest first
+            if len(rows) > MAX_ROWS:
+                rows = rows[:MAX_ROWS] if name == "Events" else rows[-MAX_ROWS:]
+            tabs[name] = {"header": [c.name for c in cur.description], "rows": rows}
         cur.execute("SELECT to_char(now(), 'YYYY-MM-DD HH24:MI:SS')")
         updated = cur.fetchone()[0]
     return tabs, updated
