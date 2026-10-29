@@ -1,7 +1,3 @@
-# copies that contain real passwords — not uploaded
-for use another computer/
-for use another computer.zip
-
 # passwords (templates: .env.example, secrets.example.h, .mcp.example.json)
 .env
 secrets.h

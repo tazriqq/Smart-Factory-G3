@@ -51,7 +51,7 @@ OEE-System/
 |---|---|---|---|
 | ทั้งหน้า | ธีมสี, layout | `01-theme.css`, `02-layout-dashboard.css` | `01-machine-sandbox.js`, `02-theme.js` |
 | **ZONE 1** | แถบบน: ชื่อ + เชื่อมบอร์ด (Bluetooth / USB / Wi-Fi / **MQTT**) | (อยู่ใน `02-layout-dashboard.css`) | `05-zone1-board-connection.js` |
-| **ZONE 2** | แผงซ้าย: ปุ่มหมุนความเร็ว M1-M4 + บอร์ดไลน์ (alarm, Good / Reject) | `10-zone2-knobs.css`, `11-zone2-control-panel.css` | `04-zone2-control-panel.js` (+ ปุ่มหมุนใน `05-…`) |
+| **ZONE 2** | แผงซ้าย (ซ่อนไว้ ปุ่มย้ายไปหน้า `control.html` แล้ว แต่ยังรับค่าจากหน้า control): ปุ่มหมุนความเร็ว M1-M4 + บอร์ดไลน์ (alarm, Good / Reject) | `10-zone2-knobs.css`, `11-zone2-control-panel.css` | `04-zone2-control-panel.js` (+ ปุ่มหมุนใน `05-…`) |
 | **ZONE 3** | ไลน์ผลิต: เครื่อง 4 เครื่องบนพื้นโรงงาน, สายพาน, สถิติไลน์ | `08-zone3-factory-line.css`, `09-zone3-cnc-stage.css` | `03-zone3-line-stage.js`, `15-zone3-factory-line.js` |
 | เครื่องจักร | ภาพวาด + animation ของแต่ละเครื่อง | `04-machine-lnc8.css` … `07-machines-on-line.css` | `07`-`14-machine-*.js` |
 | **ZONE 4** | แผง OEE: A × P × Q, กะ, timeline | `03-zone4-oee.css` | `06-zone4-oee.js` |
@@ -70,7 +70,7 @@ OEE-System/
 
 | อะไร | ที่อยู่ | login |
 |---|---|---|
-| หน้าเว็บ | `http://192.168.1.107:8080` | MQTT user `web` + `MQTT_WEB_PASS` ใน `.env` |
+| หน้าเว็บ OEE / control | `http://192.168.1.107:8080` · `/control.html` | OEE ไม่ต้อง login · control: MQTT user `web` + `MQTT_WEB_PASS` |
 | Grafana | `http://192.168.1.107:3000` | `GRAFANA_ADMIN_USER` / `GRAFANA_ADMIN_PASSWORD` ใน `.env` |
 | MQTT (ESP32) | `192.168.1.107:1883` | user `esp32` + `MQTT_ESP32_PASS` |
 | MQTT WebSocket | `ws://192.168.1.107:9001` | user `web` |
@@ -133,9 +133,9 @@ OEE-System/
 | `Log: buffer full, oldest row dropped` | MQTT หลุดนานเกิน ~2 ชม. | ตรวจ server / Wi-Fi |
 
 ## 4. หน้าเว็บ
-เปิด `http://192.168.1.107:8080` (คอม / มือถือ ที่อยู่ Wi-Fi เดียวกัน)
-→ Board via **MQTT** → ช่อง broker และ user `web` กรอกไว้ให้แล้ว → ใส่ password (`MQTT_WEB_PASS`) → **Connect**
-→ ต้องขึ้น **Connected · MQTT · receiving** (เบราว์เซอร์จำค่าไว้ ครั้งหน้ากด Connect อย่างเดียว)
+- **OEE** `http://192.168.1.107:8080` แสดงผลอย่างเดียว ไม่ต้อง login (MQTT ช่องอ่านอย่างเดียวที่ `/mqtt-view`)
+- **Control** `http://192.168.1.107:8080/control.html` login ด้วย user `web` + `MQTT_WEB_PASS` ครั้งแรก (หรือรหัสจับคู่ 5 ตัวจากเครื่องที่ login แล้ว) · ค่าควบคุมจริงอยู่ที่ `control-hub`
+- วิธีใช้ทั้งหมด: [`README.md`](../README.md) ข้อ 3–5
 
 ## 5. ให้ Claude วิเคราะห์
 ### ทางหลัก: Claude อ่าน database ผ่าน MCP (ละเอียดที่สุด)
