@@ -498,11 +498,29 @@ function sendCtl(note, cls) {
 }
 // QC good / reject, undo, reset: counted on the hub, never in conflict
 function press(key) { ctl[key]++; command({ cmd: "press", key }); }
+// a change made on another device: the same line in this page's Events
+function logOther(a, b) {
+  const from = " · from another device";
+  for (let i = 0; i < 4; i++) {
+    if (a.run[i] !== b.run[i]) event(`M${i + 1} run switch ${b.run[i] ? "ON" : "OFF"}${from}`, b.run[i] ? "g" : "");
+    if (a.door[i] !== b.door[i]) event(`M${i + 1} door ${b.door[i] ? "open" : "closed"}${from}`, b.door[i] ? "" : "g");
+    if (a.setup[i] !== b.setup[i]) event(`M${i + 1} ${b.setup[i] ? "set-up / maintenance" : "back in production"}${from}`, "n");
+    if (pctOf(a.pot[i]) !== pctOf(b.pot[i]) && dragging !== i) event(`M${i + 1} speed ${pctOf(b.pot[i])} %${from}`, "n");
+  }
+  if (a.al !== b.al) event((b.al ? "ALARM ON" : "alarm cleared") + from, b.al ? "r" : "g");
+  if (a.useBoard !== b.useBoard) event((b.useBoard ? "connect board" : "disconnect board · simulator") + from, "n");
+  if (a.route !== b.route) event("route → " + b.route + from, "b");
+  if (a.sim.run !== b.sim.run) event((b.sim.run ? "line running" : "line paused") + from, "n");
+  if (a.sim.speed !== b.sim.speed) event(`time speed ${b.sim.speed}×${from}`, "n");
+}
 // the hub's state: everyone's changes, in the order they reached the server
 function onState(text) {
   let m; try { m = JSON.parse(text); } catch { return; }
   if (!m.hub || !Array.isArray(m.pot)) return;
   if (m.last && m.last.by === ME && !m.last.ok && (!S || S.ms !== m.ms)) event(`ignored: someone else changed ${m.last.key} first`, "r");
+  if (S && m.last && m.last.by !== ME && m.last.ok) logOther(S, m);
+  if (S) for (const [k, t, c] of [["good", "QC good", "g"], ["rej", "QC reject", "r"], ["undo", "QC undo last", "n"], ["reset", "line reset", "r"]])
+    if (m[k] > ctl[k]) event(`${t}${k === "good" || k === "rej" ? " → " + m[k] : ""} · from another device`, c);
   S = m;
   for (const k of ["run", "door", "setup"]) ctl[k] = m[k].slice();
   ctl.pot = m.pot.map((v, i) => (i === dragging ? ctl.pot[i] : v));
