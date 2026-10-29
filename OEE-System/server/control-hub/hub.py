@@ -11,12 +11,19 @@
 #
 # src in the state tells every page what to follow: "board" when useBoard is on and the board is sending,
 # otherwise "sim" (the control pages' simulator).
+#
+# Pairing (log another device in): a logged-in control page posts {"by":"a1b2"} to <line>/control/pair; the hub
+# answers on <line>/control/pair/a1b2 with a 5-character code. GET /pair/<code> (nginx passes it on) gives that
+# device the web login once: a code works a single time, for PAIR_TTL_S seconds, and wrong guesses get blocked.
 
 import json
 import os
 import random
+import secrets
 import string
+import threading
 import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import paho.mqtt.client as mqtt
 
@@ -26,6 +33,13 @@ USER = os.environ["MQTT_USER"]
 PASS = os.environ["MQTT_PASS"]
 BASE = os.environ.get("LINE_TOPIC", "group3/dpx/line1")
 T_STATE, T_SET, T_BOARD = BASE + "/control", BASE + "/control/set", BASE + "/board"
+T_PAIR = BASE + "/control/pair"
+WEB_USER, WEB_PASS = "web", os.environ.get("MQTT_WEB_PASS", "")
+PAIR_TTL_S, PAIR_HTTP_PORT = 600, 8090
+PAIR_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"   # no 0/O, 1/I: easy to read and to type
+pairs = {}                                          # code -> expiry (monotonic)
+misses = {}                                         # address -> [times of wrong codes]
+pair_lock = threading.Lock()
 BOARD_QUIET_S = 3.0
 KEEPALIVE_S = 5.0
 
@@ -97,6 +111,56 @@ def on_command(m):
     dirty = True
 
 
+def new_code():
+    now = time.monotonic()
+    with pair_lock:
+        for c in [c for c, t in pairs.items() if t < now]:
+            del pairs[c]
+        if len(pairs) > 50:   # a page asking again and again
+            return None
+        code = "".join(secrets.choice(PAIR_ALPHABET) for _ in range(5))
+        pairs[code] = now + PAIR_TTL_S
+        return code
+
+
+def redeem(code, addr):
+    """the web login for a valid code (once), else None; too many wrong codes from one address or overall: blocked"""
+    now = time.monotonic()
+    with pair_lock:
+        for a in list(misses):
+            misses[a] = [t for t in misses[a] if now - t < 600]
+            if not misses[a]:
+                del misses[a]
+        if len(misses.get(addr, [])) >= 10 or sum(len(v) for v in misses.values()) >= 100:
+            return "blocked"
+        t = pairs.pop(code.upper(), None)
+        if t is None or t < now:
+            misses.setdefault(addr, []).append(now)
+            return None
+        return {"u": WEB_USER, "p": WEB_PASS}
+
+
+class PairHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        code = self.path.rsplit("/", 1)[-1]
+        addr = self.headers.get("CF-Connecting-IP") or self.headers.get("X-Real-IP") or self.client_address[0]
+        got = redeem(code, addr) if len(code) == 5 and WEB_PASS else None
+        status, body = (429, {"error": "too many wrong codes, try again in 10 minutes"}) if got == "blocked" else \
+            (200, got) if got else (404, {"error": "no such code, or it has expired"})
+        data = json.dumps(body).encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+        if status != 404:
+            print(f"control-hub: pairing code {'used' if status == 200 else 'blocked'} from {addr}", flush=True)
+
+    def log_message(self, *_):
+        pass
+
+
 def src():
     return "board" if state["useBoard"] and time.monotonic() - board_at < BOARD_QUIET_S else "sim"
 
@@ -120,6 +184,11 @@ def on_message(client, _userdata, msg):
         return
     if msg.topic == T_SET:
         on_command(m)
+    elif msg.topic == T_PAIR:
+        by = "".join(ch for ch in str(m.get("by", "")) if ch.isalnum())[:16]
+        code = new_code() if by else None
+        if code:
+            client.publish(f"{T_PAIR}/{by}", json.dumps({"code": code, "ttl_s": PAIR_TTL_S}), qos=1)
     elif msg.topic == T_STATE and not restored:
         # the retained state from before a restart (or from an older control page): carry on from it
         restored = True
@@ -138,7 +207,7 @@ def on_message(client, _userdata, msg):
 
 def on_connect(client, _userdata, _flags, reason, _props):
     print(f"control-hub: connected ({reason})", flush=True)
-    client.subscribe([(T_STATE, 1), (T_SET, 1), (T_BOARD, 0)])
+    client.subscribe([(T_STATE, 1), (T_SET, 1), (T_BOARD, 0), (T_PAIR, 1)])
 
 
 def main():
@@ -147,6 +216,7 @@ def main():
     client.username_pw_set(USER, PASS)
     client.on_connect = on_connect
     client.on_message = on_message
+    threading.Thread(target=ThreadingHTTPServer(("0.0.0.0", PAIR_HTTP_PORT), PairHandler).serve_forever, daemon=True).start()
     client.connect_async(HOST, PORT, keepalive=30)
     client.loop_start()
     started, last_pub, last_src = time.monotonic(), 0.0, None

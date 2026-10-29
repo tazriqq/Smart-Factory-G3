@@ -234,11 +234,12 @@ main>*{min-width:0}
 <div class="share-bg" id="share-bg" hidden>
   <div class="share" role="dialog" aria-modal="true" aria-labelledby="share-h">
     <h2 id="share-h">Log in on another device</h2>
-    <p class="hint" style="margin:0">สแกนด้วยกล้องโทรศัพท์ หรือคัดลอกลิงก์ไปเปิด · เปิดแล้ว login ให้เอง ไม่ต้องพิมพ์รหัส</p>
+    <p class="hint" style="margin:0">สแกนด้วยกล้องโทรศัพท์ เปิดลิงก์ หรือพิมพ์รหัสในช่อง "รหัส 5 ตัว" ของหน้า control · ใช้ได้ครั้งเดียว ภายใน 10 นาที</p>
     <div class="qr" id="share-qr"></div>
+    <b id="share-code" style="font:600 30px var(--mono);letter-spacing:.25em;color:var(--strong)"></b>
     <textarea id="share-link" readonly aria-label="Login link"></textarea>
     <div class="row2"><button class="btn" id="share-copy" type="button">Copy link</button><button class="btn" id="share-close" type="button">Close</button></div>
-    <p class="warn">ลิงก์ / QR นี้มีรหัสอยู่ ใครได้ไปก็คุมไลน์ได้ · ให้เฉพาะคนในทีม อย่าส่งในกลุ่มสาธารณะ</p>
+    <p class="warn">ใครได้รหัสนี้ไปภายใน 10 นาที ก็คุมไลน์ได้ · ให้เฉพาะคนในทีม อย่าส่งในกลุ่มสาธารณะ</p>
   </div>
 </div>
 <main>
@@ -257,6 +258,7 @@ main>*{min-width:0}
       <input class="in" id="pass" type="password" placeholder="password" autocomplete="off" aria-label="MQTT password">
       <button class="btn" id="go" type="button">Log in</button>
       <button class="btn" id="share" type="button" hidden>📱 Share login (QR)</button>
+      <span class="login" style="display:inline-flex;gap:6px;align-items:center"><span class="hint" style="margin:0">หรือรหัส 5 ตัว</span><input class="in" id="pair" type="text" maxlength="5" placeholder="K7P2Q" autocomplete="off" autocapitalize="characters" spellcheck="false" style="width:80px;text-transform:uppercase" aria-label="Pairing code"><button class="btn" id="pair-go" type="button">Use code</button></span>
       <span class="grow"></span>
       <span class="pill" id="pill" data-s="off" role="status"><i></i><span>Not connected</span></span>
     </div>
@@ -684,8 +686,29 @@ function pill(s, text) { $("pill").dataset.s = s; $("pill").lastChild.textConten
 const BASE = "group3/dpx/line1";
 // opened from a shared login link (#login=…, see Share login): keep the login, then take it out of the address bar.
 // The part after # never goes to the server or Cloudflare.
+// the server swaps a 5-character pairing code (see Share login) for the login, once
+async function usePairCode(code) {
+  code = String(code || "").trim().toUpperCase();
+  if (!/^[A-Z0-9]{5}$/.test(code)) { pill("err", "a pairing code has 5 letters / digits"); return false; }
+  pill("busy", "Checking the code …");
+  try {
+    const r = await fetch("pair/" + code, { cache: "no-store" }), j = await r.json();
+    if (!r.ok || !j.p) { pill("err", j.error || "the code didn't work"); return false; }
+    remember.set("cnc-mqtt-user", j.u || "web"); remember.set("cnc-mqtt-pass", j.p);
+    try { localStorage.removeItem("cnc-mqtt-url"); } catch {}
+    $("user").value = j.u || "web"; $("pass").value = j.p;
+    $("url").value = location.protocol === "https:" ? `wss://${location.host}/mqtt` : `ws://${location.hostname}:9001`;
+    return true;
+  } catch { pill("err", "can't reach the server to check the code"); return false; }
+}
+const pairFromLink = (() => {
+  const h = location.hash.match(/^#login=([A-Za-z0-9]{5})$/);
+  if (!h) return null;
+  history.replaceState(null, "", location.pathname + location.search);
+  return h[1];
+})();
 (() => {
-  const h = location.hash.match(/^#login=([A-Za-z0-9_-]+)$/);
+  const h = location.hash.match(/^#login=([A-Za-z0-9_-]{6,})$/);
   if (!h) return;
   try {
     const c = JSON.parse(decodeURIComponent(escape(atob(h[1].replace(/-/g, "+").replace(/_/g, "/")))));
@@ -732,25 +755,32 @@ async function connect() {
   client.on("error", (e) => { pill("err", "MQTT: " + (e && e.message ? e.message : e)); if (/auth|not authorized/i.test(String(e && e.message))) { client.end(true); client = null; $("go").textContent = "Log in"; } });
 }
 $("go").addEventListener("click", connect);
-// share login: a link to this page with the login after #, shown as a QR code and as text
-function shareLink() {
-  const json = JSON.stringify({ u: $("user").value.trim() || "web", p: $("pass").value });
-  const b64 = btoa(unescape(encodeURIComponent(json))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-  return location.origin + location.pathname + "#login=" + b64;
-}
+// share login: the hub gives a 5-character pairing code; shown as a QR code, a link and the code itself
 $("share").addEventListener("click", () => {
-  const link = shareLink();
-  $("share-qr").innerHTML = window.QR ? QR.svg(link, 5) : "";
-  $("share-link").value = link;
-  $("share-copy").textContent = "Copy link";
-  $("share-bg").hidden = false;
+  if (!client || !client.connected) return;
+  const reply = BASE + "/control/pair/" + ME;
+  const done = (t, payload) => {
+    if (t !== reply) return;
+    client.off("message", done); client.unsubscribe(reply);
+    let m; try { m = JSON.parse(payload.toString()); } catch { return; }
+    const link = location.origin + location.pathname + "#login=" + m.code;
+    $("share-qr").innerHTML = window.QR ? QR.svg(link, 6) : "";
+    $("share-code").textContent = m.code;
+    $("share-link").value = link;
+    $("share-copy").textContent = "Copy link";
+    $("share-bg").hidden = false;
+  };
+  client.on("message", done);
+  client.subscribe(reply, { qos: 1 }, () => client.publish(BASE + "/control/pair", JSON.stringify({ by: ME }), { qos: 1 }));
 });
+$("pair-go").addEventListener("click", async () => { if (await usePairCode($("pair").value) && !client) connect(); });
+$("pair").addEventListener("keydown", (e) => { if (e.key === "Enter") $("pair-go").click(); });
 $("share-copy").addEventListener("click", async () => {
   const t = $("share-link");
   try { await navigator.clipboard.writeText(t.value); } catch { t.select(); document.execCommand("copy"); }
   $("share-copy").textContent = "Copied ✓";
 });
-const closeShare = () => { $("share-bg").hidden = true; $("share-qr").innerHTML = ""; $("share-link").value = ""; };
+const closeShare = () => { $("share-bg").hidden = true; $("share-qr").innerHTML = ""; $("share-link").value = ""; $("share-code").textContent = ""; };
 $("share-close").addEventListener("click", closeShare);
 $("share-bg").addEventListener("click", (e) => { if (e.target === e.currentTarget) closeShare(); });
 addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("share-bg").hidden) closeShare(); });
@@ -850,7 +880,10 @@ $("wiring").addEventListener("toggle", (e) => {
   f.src = f.dataset.src;
 });
 renderCtl(); renderRoute();
-if ($("pass").value) connect();
+(async () => {
+  if (pairFromLink && !(await usePairCode(pairFromLink))) return;
+  if ($("pass").value) connect();
+})();
 </script>
 </body>
 </html>

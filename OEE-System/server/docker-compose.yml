@@ -121,6 +121,7 @@ services:
     environment:
       MQTT_USER: hub
       MQTT_PASS: ${MQTT_HUB_PASS}
+      MQTT_WEB_PASS: ${MQTT_WEB_PASS}   # handed out once per pairing code (GET /pair/<code>)
 
   sheets-sync:
     build: ./sheets-sync

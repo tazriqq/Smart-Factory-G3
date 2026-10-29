@@ -10,8 +10,11 @@ topic read group3/dpx/#
 topic write group3/dpx/+/route/set
 # ...and send the control page's commands (website/control.html); only the hub writes the state itself
 topic write group3/dpx/+/control/set
+# ...and ask the hub for a pairing code (log another device in)
+topic write group3/dpx/+/control/pair
 
 # hub: server/control-hub, the one copy of the control page's state
 user hub
 topic read group3/dpx/#
 topic write group3/dpx/+/control
+topic write group3/dpx/+/control/pair/+
