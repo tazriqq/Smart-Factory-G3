@@ -53,17 +53,21 @@ window.pots.forEach((p, i) => show(i, p.value()));
 const sourceSel = $("source");
 const NUS = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
 const NUS_TX = "6e400003-b5a3-f393-e0a9-e50e24dcca9e";
+const NUS_RX = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";   // page -> board: "route 12-34"
+const toBoard = new TextEncoder();
 const NAMES = { usb: "USB cable", ble: "Bluetooth", wifi: "Wi‑Fi", mqtt: "MQTT" };
 const addrInput = $("board-addr");
 const mqttUrl = $("mqtt-url"), mqttTopic = $("mqtt-topic"), mqttUser = $("mqtt-user"), mqttPass = $("mqtt-pass");
 
 // ---- the board's machine signals: run switches, doors, alarm, part / good / reject counters ----
-// The board sends {"pot":[..],"run":[1,0,1,1],"door":[0,0,1,0],"al":0,"cnt":[..],"good":n,"rej":n,"ms":n}.
+// The board sends {"pot":[..],"run":[1,0,1,1],"door":[0,0,1,0],"al":0,"cnt":[..],"good":n,"rej":n,"ms":n,
+//                 "route":"12-34","out":[a,b],"qg":[a,b],"qr":[a,b]}  (products A / B: route, output, QC good / reject).
 // The board makes the parts itself (cnt); its four door buttons open / close the machines' doors.
 // Counters only count up on the board; here they become events and per-machine run/stop time.
 window.__board = (() => {
   const b = { live: false, run: [1, 1, 1, 1], door: [false, false, false, false], al: false, last: null, lastAt: 0, tick: 0, lastMachine: -1,
-    stats: [0, 1, 2, 3].map(() => ({ run: 0, stop: 0, parts: 0, rej: 0, at: 0, gap: 0 })), qc: { good: 0, rej: 0 }, T: 0 };
+    stats: [0, 1, 2, 3].map(() => ({ run: 0, stop: 0, parts: 0, rej: 0, at: 0, gap: 0 })), qc: { good: 0, rej: 0 }, T: 0,
+    qcP: [{ good: 0, rej: 0 }, { good: 0, rej: 0 }], route: null, setRoute: null };
   const ls = {};
   const emit = (ev, ...a) => (ls[ev] || []).forEach((fn) => { try { fn(...a); } catch (e) { console.error(e); } });
   b.on = (ev, fn) => (ls[ev] || (ls[ev] = [])).push(fn);
@@ -94,8 +98,16 @@ window.__board = (() => {
       const dg = (m.good >>> 0) - (q.good >>> 0), dr = (m.rej >>> 0) - (q.rej >>> 0);
       for (let k = 0; k < dg && k < 1000; k++) { b.qc.good++; emit("good"); }
       for (let k = 0; k < dr && k < 1000; k++) { b.qc.rej++; if (b.lastMachine >= 0) b.stats[b.lastMachine].rej++; emit("reject", b.lastMachine); }
+      // per product: the board's own split when it sends one (its counters restart with a new route), else all for A
+      const split = Array.isArray(m.qg) && Array.isArray(q.qg) && m.route === q.route;
+      for (let p = 0; p < 2; p++) {
+        const g = split ? (m.qg[p] >>> 0) - (q.qg[p] >>> 0) : p ? 0 : dg, r = split ? (m.qr[p] >>> 0) - (q.qr[p] >>> 0) : p ? 0 : dr;
+        if (g > 0 && g < 1000) b.qcP[p].good += g;
+        if (r > 0 && r < 1000) b.qcP[p].rej += r;
+      }
       if (!!q.al !== b.al) emit("alarm", b.al);
     }
+    if (typeof m.route === "string" && m.route !== b.route) { b.route = m.route; emit("route", m.route); }
     b.last = m;
   };
   // run / stop time per machine, in real time: running = its switch on, no alarm, knob above 0 %
@@ -106,8 +118,8 @@ window.__board = (() => {
     const dt = (now - b.tick) / 1000; b.tick = now; b.T += dt;
     for (let i = 0; i < 4; i++) { if (b.gate(i) && !b.door[i] && (window.__speeds[i] || 0) > 0) b.stats[i].run += dt; else b.stats[i].stop += dt; }
   }, 250);
-  b.reset = () => { b.stats.forEach((s) => Object.assign(s, { run: 0, stop: 0, parts: 0, rej: 0, at: 0, gap: 0 })); b.qc.good = b.qc.rej = 0; b.T = 0; b.lastMachine = -1; };
-  b.stop = () => { if (b.live) { b.live = false; emit("live", false); } b.last = null; };
+  b.reset = () => { b.stats.forEach((s) => Object.assign(s, { run: 0, stop: 0, parts: 0, rej: 0, at: 0, gap: 0 })); b.qc.good = b.qc.rej = 0; b.qcP.forEach((x) => { x.good = x.rej = 0; }); b.T = 0; b.lastMachine = -1; };
+  b.stop = () => { if (b.live) { b.live = false; emit("live", false); } b.last = null; b.route = null; };
   return b;
 })();
 window.__gate = (i) => window.__board.gate(i);
@@ -165,8 +177,10 @@ sourceSel.addEventListener("change", () => {
   if (!supported(sourceSel.value)) say(NAMES[sourceSel.value] + " needs Chrome or Edge on a computer" + (sourceSel.value === "ble" ? " (or Chrome on Android), opened from http://localhost." : "."));
   else say("Press Connect and pick the board.");
 });
-function connected(kind, close) {
+// setRoute(text): sends the products' route ("12-34") to the board over this connection
+function connected(kind, close, setRoute) {
   conn = { kind, close };
+  window.__board.setRoute = setRoute || null;
   lastData = performance.now();
   setPill("on", "Connected · " + NAMES[kind]);
   potHints.forEach((h) => { h.textContent = "Set by the board"; });
@@ -176,6 +190,7 @@ function connected(kind, close) {
 async function disconnect(message) {
   gen++;
   const c = conn; conn = null;
+  window.__board.setRoute = null;
   setPill(/lost|unplugged|stopped/i.test(message) ? "error" : "off", /lost|unplugged|stopped/i.test(message) ? "Disconnected · connection lost" : "Not connected");
   if (c) { try { await c.close(); } catch {} }
   lastAdc.fill(null);
@@ -192,7 +207,8 @@ async function openUsb(my) {
   const decoder = new TextDecoderStream();
   const piped = port.readable.pipeTo(decoder.writable).catch(() => {});
   const reader = decoder.readable.getReader();
-  connected("usb", async () => { try { await reader.cancel(); } catch {} try { await piped; } catch {} try { await port.close(); } catch {} });
+  connected("usb", async () => { try { await reader.cancel(); } catch {} try { await piped; } catch {} try { await port.close(); } catch {} },
+    async (route) => { const w = port.writable.getWriter(); try { await w.write(toBoard.encode("route " + route + "\n")); } finally { w.releaseLock(); } });
   const feed = splitter();
   try { for (;;) { const { value, done } = await reader.read(); if (done) break; feed(value); } } catch {}
   finally { try { reader.releaseLock(); } catch {} }
@@ -210,7 +226,10 @@ async function openWifi(my) {
   try { first = await once(); } catch { throw new Error("can't reach " + a + " (same 2.4 GHz Wi‑Fi? right address?)"); }
   if (my !== gen) return;
   let stopped = false;
-  connected("wifi", async () => { stopped = true; });
+  connected("wifi", async () => { stopped = true; }, async (route) => {
+    const r = await fetch(a + "/route", { method: "POST", body: route });
+    if (!r.ok) throw new Error((await r.text()).trim() || "HTTP " + r.status);
+  });
   handle(first);
   let fails = 0;
   while (!stopped && my === gen) {
@@ -260,7 +279,10 @@ async function openMqtt(my) {
   client.on("message", (t, payload) => { if (my === gen && t === topic) feed(payload.toString() + "\n"); });
   client.on("offline", () => { if (my === gen && conn) setPill("error", "MQTT · reconnecting …"); });
   client.on("connect", () => { if (my === gen && conn) setPill("on", "Connected · MQTT"); });
-  connected("mqtt", async () => { client.end(true); });
+  // the board listens on <line>/route/set next to its <line>/board topic
+  const routeTopic = topic.replace(/\/[^/]+$/, "/route/set");
+  connected("mqtt", async () => { client.end(true); },
+    (route) => new Promise((ok, fail) => client.publish(routeTopic, route, { qos: 1 }, (e) => (e ? fail(e) : ok()))));
   say("Connected to the MQTT broker. Waiting for the ESP32 on topic “" + topic + "” …");
 }
 navigator.serial?.addEventListener("disconnect", () => { if (conn && conn.kind === "usb") disconnect("The board was unplugged."); });
@@ -269,11 +291,13 @@ async function openBle(my) {
   const server = await device.gatt.connect();
   const service = await server.getPrimaryService(NUS);
   const tx = await service.getCharacteristic(NUS_TX);
+  const rx = await service.getCharacteristic(NUS_RX).catch(() => null);
   const feed = splitter(), text = new TextDecoder();
   tx.addEventListener("characteristicvaluechanged", (e) => { if (my === gen) feed(text.decode(e.target.value)); });
   await tx.startNotifications();
   device.addEventListener("gattserverdisconnected", () => { if (my === gen) disconnect("Bluetooth connection lost. Press Connect to pair again."); });
-  connected("ble", async () => { try { device.gatt.disconnect(); } catch {} });
+  connected("ble", async () => { try { device.gatt.disconnect(); } catch {} },
+    rx && ((route) => rx.writeValue(toBoard.encode("route " + route + "\n"))));
 }
 button.addEventListener("click", async () => {
   if (conn) return disconnect("Disconnected. Drag the on-screen sliders to set each machine's speed.");

@@ -13,16 +13,17 @@
 // the secret is kept in Script properties (not in this file), so this file can be shared
 const KEY = () => PropertiesService.getScriptProperties().getProperty('KEY');
 const TZ = 'Asia/Bangkok';
-const TAB_NAMES = ['Events', 'OEE_Daily', 'OEE_Hourly', 'Machines'];
+const TAB_NAMES = ['Events', 'OEE_Daily', 'OEE_Hourly', 'Products', 'Machines'];
 const PERCENT = ['availability', 'performance', 'quality', 'oee'];   // columns shown as %
 
 const NOTES = [
   ['What the tabs mean (for people and for Claude)'],
   ['This sheet is a summary. The full data (every signal, every event, every minute) is in the PostgreSQL database on the server; the server rewrites these tabs every 15 minutes, so edits made here are lost.'],
-  ['Events: the last 500 button / switch presses, newest first, updated about 10 seconds after each press. machine 0 = the whole line. event = part (a machine finished a part; the board makes them by itself), run_on / run_off (run switch), door_open / door_close (door button; an open door stops the machine), alarm_on / alarm_off (line E-stop), good / reject (QC: one part from the line output checked good / scrap), boot (the board restarted).'],
-  ['OEE_Daily: one row per machine per day (Thailand date), all history. OEE_Hourly: the same per hour, last 14 days.'],
-  ['Columns: logged_min = minutes the board was on and logging, run_min = running (run switch on, no alarm, speed above 0 %), stop_min = not running (alarm_min of them under the line alarm / E-stop), parts = parts finished, ideal_cycle_s = fastest normal cycle time, good / reject = QC presses for the whole line.'],
-  ['Availability = run / logged time. Performance = ideal_cycle_s x parts / run time. Quality = good / (good + reject), counted for the whole line, so it is the same for every machine. OEE = A x P x Q. Empty = nothing to divide by.'],
+  ['Events: the last 500 button / switch presses, newest first, updated about 10 seconds after each press. machine 0 = the whole line. event = part (a machine finished a part; the board makes them by itself), run_on / run_off (run switch), door_open / door_close (door button; an open door stops the machine), alarm_on / alarm_off (line E-stop), output (the last machine of a product route finished that product), good / reject (QC: the latest output part checked good / scrap), boot (the board restarted), route (the routes changed: route 12-34 = product A through machines 1 then 2, product B through 3 then 4). product = A / B.'],
+  ['OEE_Daily: one row per machine (and the product it worked on) per day (Thailand date), all history. OEE_Hourly: the same per hour, last 14 days. An empty product = the machine was in no route (idle), or the row is from before products existed.'],
+  ['Products: one row per product per day: output = parts off the end of its route, good / reject = QC presses for it, quality = good / (good + reject).'],
+  ['Columns: logged_min = minutes the board was on and logging, run_min = running (run switch on, no alarm, speed above 0 %), stop_min = not running (alarm_min of them under the line alarm / E-stop), parts = parts finished, ideal_cycle_s = fastest normal cycle time, good / reject = QC presses for that product.'],
+  ['Availability = run / logged time. Performance = ideal_cycle_s x parts / run time. Quality = good / (good + reject) of the product the machine worked on, so it is the same for every machine on that route. OEE = A x P x Q. Empty = nothing to divide by.'],
   ['Machines: names and ideal_cycle_s. To change them, change the machines table in the database (see README); every day is then recomputed.'],
 ];
 

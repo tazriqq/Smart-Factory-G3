@@ -116,8 +116,11 @@ OEE-System/
 - Board **ESP32 Dev Module**, Partition Scheme **Huge APP (3MB No OTA/1MB SPIFFS)** → Upload
 - **Bluetooth เปิดได้แล้ว** (`USE_BLE = true`) เพราะบอร์ดไม่ต้องทำ HTTPS ไป Google
 - **ปุ่มบนบอร์ด:** ปุ่ม 6×6 ขา 23 / 19 / 18 / 17 = **เปิด / ปิดฝา** เครื่อง M1–M4 (ฝาเปิด = เครื่องหยุด) · ขา 16 = **GOOD**, ขา 4 = **REJECT** (ย้ายกล่องจากกอง 1 ไปกองดี / กองเสียบนหน้าเว็บ)
-- **บอร์ดผลิตชิ้นงานเอง:** เครื่องที่เดินอยู่ (run ติด, ไม่มี alarm, ฝาปิด, ความเร็ว > 0 %) ทำเสร็จ 1 ชิ้นทุก cycle (M1 18 s · M2 30 s · M3 24 s · M4 36 s ที่ 100 %) แล้วส่งต่อเครื่องถัดไป ชิ้นจาก M4 คือ output ของไลน์ — `ideal_cycle_s` ในตาราง `machines` ต้องตรงกับค่านี้ (`CYCLE_MS` ใน `.ino`)
-- บอร์ดส่ง 3 topic: `…/board` (สัญญาณสด), `…/events` (กดปุ่ม / สวิตช์), `…/minutes` (สรุปทุก 1 นาที / เครื่อง)
+- **บอร์ดผลิตชิ้นงานเอง:** เครื่องที่เดินอยู่ (run ติด, ไม่มี alarm, ฝาปิด, ความเร็ว > 0 %) ทำเสร็จ 1 ชิ้นทุก cycle (M1 18 s · M2 30 s · M3 24 s · M4 36 s ที่ 100 %) แล้วส่งต่อเครื่องถัดไปในเส้นทางของ product นั้น ชิ้นจากเครื่องสุดท้ายของเส้นทางคือ output — `ideal_cycle_s` ในตาราง `machines` ต้องตรงกับค่านี้ (`CYCLE_MS` ใน `.ino`)
+- **2 product (เส้นทางผลิต):** บอร์ดเก็บเส้นทางเป็นข้อความ เช่น `12-34` = product A ผ่าน M1 → M2, product B ผ่าน M3 → M4 (`1234-` = product เดียวผ่านทั้ง 4 เครื่อง, เครื่องที่ไม่อยู่ในเส้นทางไหน = idle) · 1 เครื่องอยู่ได้ product เดียว · จำไว้ใน flash แม้ปิดเครื่อง · เปลี่ยนเส้นทางแล้วชิ้นงานค้างหายไป
+  - ตั้งจากหน้าเว็บ (กล่อง **Products** มุมขวาบนของไลน์) — หรือพิมพ์ `route 12-34` ใน Serial Monitor · `POST http://192.168.1.200/route` body `12-34` · MQTT publish `12-34` ไป `group3/dpx/line1/route/set`
+  - ปุ่ม GOOD / REJECT นับให้ product ที่มีชิ้นงานออกจากไลน์ล่าสุด
+- บอร์ดส่ง 3 topic: `…/board` (สัญญาณสด + `route`, `out`, `qg`, `qr` ของแต่ละ product), `…/events` (กดปุ่ม / สวิตช์ / ผลิตเสร็จ พร้อม `product`), `…/minutes` (สรุปทุก 1 นาที / เครื่อง พร้อม `product`) และฟัง `…/route/set` (user `web` เขียนได้เฉพาะ topic นี้)
   ถ้า MQTT หลุด แถว events / minutes รอในบอร์ด (600 แถว ≈ 2 ชั่วโมง) แล้วส่งตามเมื่อต่อได้ — เวลาถูกต้องเพราะบอร์ดบอกว่ารอไปนานเท่าไร (`age_ms`) ไม่ต้องใช้นาฬิกาจากอินเทอร์เน็ต
 - Serial Monitor 115200 ควรเห็น
   `# Wi-Fi: connected` → `# MQTT: connected, publishing to group3/dpx/line1/board`
@@ -161,19 +164,21 @@ OEE-System/
 ### PostgreSQL / TimescaleDB (ที่เก็บหลัก, database `factory`)
 | ชื่อ | ชนิด | 1 แถว = | เก็บ |
 |---|---|---|---|
-| `events` | ตาราง | 1 สัญญาณ: `machine` (0 = ทั้งไลน์), `event` = part, run_on/off, door_open/close, alarm_on/off, good, reject, boot | ตลอดไป |
-| `minutes` | ตาราง | 1 เครื่อง / 1 นาที: `run_s`, `stop_s`, `alarm_s`, `parts`, `speed_pct` | ตลอดไป |
+| `events` | ตาราง | 1 สัญญาณ: `machine` (0 = ทั้งไลน์), `event` = part, output, run_on/off, door_open/close, alarm_on/off, good, reject, boot, route · `product` = A / B · `route` (เฉพาะ event route) | ตลอดไป |
+| `minutes` | ตาราง | 1 เครื่อง / 1 นาที: `product`, `run_s`, `stop_s`, `alarm_s`, `parts`, `speed_pct` | ตลอดไป |
 | `board` | ตาราง | ข้อความสดจากบอร์ด (~1 ครั้ง/วินาที) `pot_0..3 run_0..3 door_0..3 al cnt_0..3 good rej ms` | 365 วัน (บีบอัดหลัง 7 วัน) |
 | `board_status` | ตาราง | online / offline ของบอร์ด | ตลอดไป |
 | `machines` | ตาราง (ตั้งค่า) | ชื่อเครื่อง + `ideal_cycle_s` | — |
-| `oee_daily` | view | OEE 1 เครื่อง / 1 วัน (วันที่ไทย) | คำนวณสดทุกครั้ง |
+| `oee_daily` | view | OEE 1 เครื่อง (+ product ที่ทำ) / 1 วัน (วันที่ไทย) | คำนวณสดทุกครั้ง |
+| `product_daily` | view | 1 product / 1 วัน: `output`, `good`, `reject`, `quality` | คำนวณสดทุกครั้ง |
+| `route_history` | view | ทุกครั้งที่เปลี่ยนเส้นทาง: เวลา + เครื่องของ A / B | — |
 | `oee_hourly` | view | OEE 1 เครื่อง / 1 ชั่วโมง ย้อนหลัง 30 วัน | คำนวณสดทุกครั้ง |
 | `oee(bucket, since, until, bucket_offset)` | function | OEE ช่วงเวลาใดก็ได้ เช่น กะ 08-20 / 20-08: `oee('12 hours', bucket_offset => '8 hours')` | — |
 | `line_status` | view | บอร์ด online ไหม + ข้อมูลล่าสุดเข้ามาเมื่อไร | — |
 
 - **Availability** = เวลาเดินเครื่อง ÷ เวลาที่บอร์ดเปิดบันทึก
 - **Performance** = ideal_cycle_s × จำนวนชิ้น ÷ เวลาเดินเครื่อง
-- **Quality** = good ÷ (good + reject) — ปุ่ม QC เป็นของ **ทั้งไลน์** จึงเท่ากันทุกเครื่อง
+- **Quality** = good ÷ (good + reject) ของ **product ที่เครื่องนั้นทำ** — เครื่องในเส้นทางเดียวกันจึงได้ค่าเท่ากัน (ข้อมูลก่อนมี product นับรวมทั้งไลน์เหมือนเดิม)
 - **แก้ ideal_cycle_s** (ทุกวันย้อนหลังคำนวณใหม่เองทันที):
   ```bash
   docker compose exec timescaledb psql -U factory_admin -d factory -c "UPDATE machines SET ideal_cycle_s = 55 WHERE line = 'line1' AND machine = 1"
@@ -187,6 +192,7 @@ OEE-System/
 | Events | กดปุ่ม / สวิตช์ 500 ครั้งล่าสุด (ใหม่สุดอยู่บน) — ขึ้นชีตภายใน ~10 วินาทีหลังกด (`SHEETS_EVENTS_ROWS`, `SHEETS_EVENTS_GAP_S`) |
 | OEE_Daily | view `oee_daily` ทั้งหมด |
 | OEE_Hourly | `oee('1 hour')` ย้อนหลัง 14 วัน (`SHEETS_HOURLY_DAYS`) |
+| Products | view `product_daily` ทั้งหมด (ต้องใช้ `sheets_webapp.gs` ตัวใหม่) |
 | Machines | ตาราง `machines` |
 | Notes | คำอธิบายแต่ละแท็บ + เวลาอัปเดตล่าสุด |
 

@@ -26,18 +26,50 @@ MACHINES.forEach((m) => {
   m.tag = [ax, ay - m.tagH];
   m.z = 10 + Math.round((m.u + m.v) / 10);
 });
-// conveyors: start on the floor (u, v) and runs along one axis
-const B = (id, from, to, u, v, ax, len, z) => ({ id, from, to, start: S(u, v), moves: [[ax, len]], z });
-const [MS, ML, MG, MR] = MACHINES, TUCK = 30;
-const BELTS = [
-  B('C1', 0, 1, MS.ru - TUCK, 0, 'u', DU - MS.ru - ML.ru + 2 * TUCK, 0),
-  B('C2', 1, 2, DU, ML.rv - TUCK, 'v', DV - ML.rv - MG.rv + 2 * TUCK, 0),
-  B('C3', 2, 3, DU - MG.ru + TUCK, DV, 'u', -(DU - MG.ru - MR.ru + 2 * TUCK), 0),
-  B('C4', 3, 9, 0, DV + MR.rv - TUCK, 'v', 260, 0),
-];
-// each belt is drawn just above the machine it leaves (or the one it enters, when that one is behind)
-BELTS.forEach((b) => { const zs = [MACHINES[b.from]?.z, MACHINES[b.to]?.z].filter((z) => z !== undefined); b.z = Math.min(...zs) + 1; });
-BELTS[3].z = MR.z + 1;
+// Products: which machines make product A and which make B, in order. "12-34" = A: 01 → 02, B: 03 → 04;
+// "1234-" = one product through all four (the U-shaped line). A machine left out of both stands idle.
+// With a board connected the board holds the route (it makes the parts); without one it is kept in this browser.
+const PRODUCTS = ['A', 'B'];
+const ROUTE_KEY = 'lf-route';
+function parseRoute(t) {
+  const r = [[], []]; let p = 0;
+  for (const c of String(t || '').replace(/\s/g, '')) {
+    if (c === '-') { if (++p > 1) return null; continue; }
+    const i = '1234'.indexOf(c);
+    if (i < 0 || r[0].includes(i) || r[1].includes(i)) return null;
+    r[p].push(i);
+  }
+  return r[0].length + r[1].length ? r : null;
+}
+const routeText = (r) => r.map((ms) => ms.map((i) => i + 1).join('')).join('-');
+let ROUTE = parseRoute((() => { try { return localStorage.getItem(ROUTE_KEY); } catch { return null; } })()) || [[0, 1, 2, 3], []];
+const prodOf = (i) => ROUTE.findIndex((ms) => ms.includes(i));   // 0 = A, 1 = B, -1 = idle
+
+// conveyors: start on the floor (u, v) and run along one axis per move
+const TUCK = 30;
+// a route's last machine sends its parts out on a belt this way: along axis, direction, length
+const OUT = [['v', -1, 445], ['u', 1, 260], ['u', 1, 260], ['v', 1, 260]];
+function linkBelt(a, b, lane) {
+  const A = MACHINES[a], Z = MACHINES[b];
+  if (A.v === Z.v) { const d = Math.sign(Z.u - A.u); return { start: S(A.u + d * (A.ru - TUCK), A.v), moves: [['u', d * (Math.abs(Z.u - A.u) - A.ru - Z.ru + 2 * TUCK)]] }; }
+  if (A.u === Z.u) { const d = Math.sign(Z.v - A.v); return { start: S(A.u, A.v + d * (A.rv - TUCK)), moves: [['v', d * (Math.abs(Z.v - A.v) - A.rv - Z.rv + 2 * TUCK)]] }; }
+  // corner to corner: out to the aisle between the two rows, along it, and in
+  const d = Math.sign(Z.v - A.v), v0 = A.v + d * (A.rv - TUCK), v1 = Z.v - d * (Z.rv - TUCK), mid = (A.v + Z.v) / 2 + lane;
+  return { start: S(A.u, v0), moves: [['v', mid - v0], ['u', Z.u - A.u], ['v', v1 - mid]] };
+}
+function layoutBelts() {
+  const list = [];
+  ROUTE.forEach((ms, p) => ms.forEach((a, k) => {
+    const b = ms[k + 1], m = MACHINES[a];
+    if (b !== undefined) { list.push({ id: `C${a + 1}${b + 1}`, from: a, to: b, product: p, ...linkBelt(a, b, p * 90) }); return; }
+    const [ax, d, len] = OUT[a];
+    list.push({ id: `O${a + 1}`, from: a, to: 9, product: p, start: ax === 'u' ? S(m.u + d * (m.ru - TUCK), m.v) : S(m.u, m.v + d * (m.rv - TUCK)), moves: [[ax, d * len]] });
+  }));
+  // each belt is drawn just above the machine it leaves (or the one it enters, when that one is behind)
+  list.forEach((b) => { const zs = [MACHINES[b.from]?.z, MACHINES[b.to]?.z].filter((z) => z !== undefined); b.z = Math.min(...zs) + 1; });
+  return list;
+}
+const BELTS = [];
 const BW = 64, BH = 30, GAP = 70, SPEED = 60;
 
 const NS = 'http://www.w3.org/2000/svg';
@@ -140,7 +172,7 @@ const slots = MACHINES.map((m, i) => {
   if (m.view) squareUp(slot.querySelector('.mx'), m);
   const tag = document.createElement('div');
   tag.className = 'lf-tag';
-  tag.innerHTML = `<div class="tg-r"><i></i><b>${m.no} ${m.name}</b><em class="tg-n"></em></div>
+  tag.innerHTML = `<div class="tg-r"><i></i><b>${m.no} ${m.name}</b><span class="tg-pr"></span><em class="tg-n"></em></div>
     <div class="tg-r"><small>speed</small><span class="tg-bar"><span></span><u></u></span><span class="spd">100%</span></div>
     <div class="tg-r tg-ct"><small>cycle</small><b>—</b><em class="tg-ctx"></em></div>
     <div class="tg-r tg-oee"><small>OEE</small><strong>—</strong><em class="tg-apq"></em></div>
@@ -171,9 +203,9 @@ const slots = MACHINES.map((m, i) => {
     });
   };
   padLabel(false);
-  return { m, slot, tag, pad, padLabel, door, andon, doorBtn: tag.querySelector('.tg-door'), setup: false, dot: tag.querySelector('i'), bar: tag.querySelector('.tg-bar span'), n: tag.querySelector('.tg-n'), spd: tag.querySelector('.spd'), oee: tag.querySelector('.tg-oee strong'), apq: tag.querySelector('.tg-apq'), ct: tag.querySelector('.tg-ct b'), ctx: tag.querySelector('.tg-ctx') };
+  return { m, slot, tag, pad, padLabel, door, andon, doorBtn: tag.querySelector('.tg-door'), setup: false, dot: tag.querySelector('i'), bar: tag.querySelector('.tg-bar span'), n: tag.querySelector('.tg-n'), pr: tag.querySelector('.tg-pr'), spd: tag.querySelector('.spd'), oee: tag.querySelector('.tg-oee strong'), apq: tag.querySelector('.tg-apq'), ct: tag.querySelector('.tg-ct b'), ctx: tag.querySelector('.tg-ctx') };
 });
-let out = null;
+const outs = [];      // one output panel + piles per product
 const badges = [];   // WIP badges between stations and the output counter, placed like the tags
 function placeTags() {
   const put = (node, [x, y]) => { node.style.left = (cam.x + x * cam.k) + 'px'; node.style.top = (cam.y + y * cam.k) + 'px'; };
@@ -184,42 +216,55 @@ function placeTags() {
 if (location.hash === '#debug') MACHINES.forEach((m) => { const [x, y] = S(m.u, m.v); el('circle', { cx: x, cy: y, r: 10, fill: 'red' }, ground); });
 /* ---------- conveyors ---------- */
 const DIR = { u: [1, 0.5], v: [-1, 0.5] };
-BELTS.forEach((b, bi) => {
-  b.segs = []; let p = b.start, s = 0;
-  for (const [ax, len] of b.moves) {
-    const d = DIR[ax], sg = Math.sign(len), L = Math.abs(len);
-    const q = [p[0] + d[0] * len, p[1] + d[1] * len];
-    b.segs.push({ a: p, b: q, ax, sg, len: L, s0: s }); s += L; p = q;
-  }
-  b.len = s; b.parts = []; b.box = []; b.off = 0;
-  const z = b.z;
-  const svg = el('svg', { width: FW, height: FH, viewBox: `0 0 ${FW} ${FH}`, class: 'lf-belts' });
-  svg.style.zIndex = String(z);
-  floor.appendChild(svg);
-  b.svg = svg;
-  drawBelt(b);
-});
 beltsSvg.remove();
+// (re)builds the conveyors, output panels and piles for ROUTE; the parts on them are dropped
+function buildLine() {
+  BELTS.forEach((b) => b.svg.remove());
+  badges.forEach((b) => b.node.remove());
+  outs.forEach((o) => o.node.remove());
+  BELTS.length = badges.length = outs.length = 0;
+  BELTS.push(...layoutBelts());
+  BELTS.forEach((b) => {
+    b.segs = []; let p = b.start, s = 0;
+    for (const [ax, len] of b.moves) {
+      const d = DIR[ax], sg = Math.sign(len), L = Math.abs(len);
+      const q = [p[0] + d[0] * len, p[1] + d[1] * len];
+      b.segs.push({ a: p, b: q, ax, sg, len: L, s0: s }); s += L; p = q;
+    }
+    b.len = s; b.parts = []; b.box = []; b.off = 0;
+    const svg = el('svg', { width: FW, height: FH, viewBox: `0 0 ${FW} ${FH}`, class: 'lf-belts' });
+    svg.style.zIndex = String(b.z);
+    svg.dataset.p = b.product;
+    floor.appendChild(svg);
+    b.svg = svg;
+    drawBelt(b);
+  });
+  const two = ROUTE[0].length > 0 && ROUTE[1].length > 0;
+  // small piles with two products, and behind 01 (big ones would stand on it)
+  BELTS.filter((b) => b.to === 9).forEach((b, k) => { b.compact = two || b.from === 0; outs.push(makeOutput(b, k, b.compact)); });
+}
 
-// output counter for the end of the last belt
-(() => {
-  const b = BELTS[BELTS.length - 1];
+// output counter for the end of a product's last belt
+function makeOutput(b, k, compact) {
+  const P = PRODUCTS[b.product];
   const node = document.createElement('div');
   node.className = 'lf-out';
-  node.innerHTML = `<div class="o-h">Output · ผลผลิต</div>
+  node.dataset.p = b.product;
+  node.style.left = (10 + k * 222) + 'px';
+  node.innerHTML = `<div class="o-h"><span class="o-p">${P}</span>Output ${P} · ผลผลิต</div>
     <div class="o-g"><span><small>total</small><b data-o="tot">0</b></span><span><small>QC wait</small><b data-o="wait">0</b></span><span class="o-good"><small>good</small><b data-o="good">0</b></span><span class="o-bad"><small>scrap</small><b data-o="bad">0</b></span></div>
     <div class="o-y"><small>yield</small><span class="o-ybar"><span></span></span><b data-o="yield">—</b></div>
     <div class="o-s" data-o="by"></div>`;
   tagsBox.appendChild(node);
   const q = (k) => node.querySelector(`[data-o="${k}"]`);
-  out = { node, tot: q('tot'), wait: q('wait'), good: q('good'), bad: q('bad'), yld: q('yield'), ybar: node.querySelector('.o-ybar span'), by: q('by') };
-  b.binText = { set textContent(v) {} };
-})();
+  return { p: b.product, node, tot: q('tot'), wait: q('wait'), good: q('good'), bad: q('bad'), yld: q('yield'), ybar: node.querySelector('.o-ybar span'), by: q('by'), stacks: makeStacks(b, compact) };
+}
 
-// output piles beside the end of the line, one box per part: pile 1 = off the line, waiting for QC;
-// GOOD moves a box from pile 1 to the green pile (FG), REJECT to the red pile (NG)
-const stacks = (() => {
-  const b = BELTS[BELTS.length - 1], e = b.segs[b.segs.length - 1].b;
+// output piles beside the end of a product's last belt, one box per part: pile 1 = off the line, waiting
+// for QC; GOOD moves a box from pile 1 to the green pile (FG), REJECT to the red pile (NG).
+// compact: smaller piles, so two products (or a line ending at 01) fit on the floor.
+function makeStacks(b, compact) {
+  const e = b.segs[b.segs.length - 1].b, P_ = PRODUCTS[b.product], two = ROUTE[0].length > 0 && ROUTE[1].length > 0;
   const P = (x, y, z) => [e[0] + 40 + (x - y), e[1] + 4 + (x + y) / 2 - z];
   const pts = (a) => a.map((p) => p.map((v) => v.toFixed(1)).join(',')).join(' ');
   const root = el('g', {}, b.svg);
@@ -239,14 +284,14 @@ const stacks = (() => {
     const L = { kind, x, pallets, max: pallets * CAP, shown: 0, groups: [] };
     const node = document.createElement('div');
     node.className = 'lf-wip st-' + kind;
-    node.innerHTML = `<small>${label}</small><b>0</b>`;
+    node.innerHTML = `<small>${two ? P_ + ' · ' : ''}${label}</small><b>0</b>`;
     tagsBox.appendChild(node);
     L.num = node.querySelector('b');
     const top = P(x + PW / 2, PW / 2, PH + LAYERS * BZ + 24 + lift);
     badges.push({ node, at: top });
     return L;
   }
-  const lanes = { wt: lane('wt', 130, 2, '1 · QC wait', 150), fg: lane('fg', 250, 6, 'FG ✓ good', 75), ng: lane('ng', 370, 2, 'NG ✕ scrap', 0) };   // labels step down from pile 1 to NG so they don't overlap
+  const lanes = { wt: lane('wt', 130, compact ? 1 : 2, '1 · QC wait', 150), fg: lane('fg', 250, compact ? 2 : 6, 'FG ✓ good', 75), ng: lane('ng', 370, compact ? 1 : 2, 'NG ✕ scrap', 0) };   // labels step down from pile 1 to NG so they don't overlap
   // a pallet group, slotted into the drawing so nearer pallets paint over farther ones
   function pallet(L, n) {
     const x = L.x, y = n * (PW + 20), g = el('g', {});
@@ -269,7 +314,8 @@ const stacks = (() => {
     L.num.textContent = n > L.max ? `${n} (+${n - L.max})` : n;
   }
   return (wait, good, bad) => { sync(lanes.wt, wait); sync(lanes.fg, good); sync(lanes.ng, bad); };
-})();
+}
+buildLine();
 
 function drawBelt(b) {
   const g = el('g', {}, b.svg);
@@ -311,7 +357,7 @@ function drawBelt(b) {
     const node = document.createElement('div');
     node.className = 'lf-wip';
     node.title = `Parts waiting on conveyor ${b.id}, between ${MACHINES[b.from].no} and ${MACHINES[b.to].no}`;
-    node.innerHTML = `<small>${MACHINES[b.from].no}→${MACHINES[b.to].no}</small><small>WIP</small><b>0</b>`;
+    node.innerHTML = `<small>${ROUTE[0].length && ROUTE[1].length ? PRODUCTS[b.product] + ' · ' : ''}${MACHINES[b.from].no}→${MACHINES[b.to].no}</small><small>WIP</small><b>0</b>`;
     tagsBox.appendChild(node);
     b.wipNode = node.querySelector('b'); b.wipBox = node;
     badges.push({ node, at: [mid[0], mid[1] - 34] });
@@ -323,9 +369,9 @@ const BOX_CAP = 48;   // three 4 × 4 layers
 const beltFull = (b) => b.parts.length >= Math.floor((b.len - 18) / GAP) + 1;
 function makeCrate(b) {
   const sg = b.segs[0], d = DIR[sg.ax], pd = DIR[sg.ax === 'u' ? 'v' : 'u'];
-  // screen-left of the belt, a step away so tags don't cover it; C2's crate goes screen-right, out from under 03's tag
-  const side = b.id === 'C2' ? -1 : 1;
-  const at = sg.len * ({ C1: 0.95, C2: 0.5 }[b.id] ?? 0.3) * sg.sg, off = (BW / 2 + 130) * (pd[0] < 0 ? 1 : -1) * side;
+  // screen-left of the belt, a step away so tags don't cover it; 02→03's crate goes screen-right, out from under 03's tag
+  const side = b.id === 'C23' ? -1 : 1;
+  const at = sg.len * ({ C12: 0.95, C23: 0.5 }[b.id] ?? 0.3) * sg.sg, off = (BW / 2 + 130) * (pd[0] < 0 ? 1 : -1) * side;
   const c = [sg.a[0] + d[0] * at + pd[0] * off, sg.a[1] + d[1] * at + pd[1] * off];
   const g = el('g', { class: 'bx', transform: `translate(${c[0].toFixed(1)} ${c[1].toFixed(1)})` }, b.svg);
   b.boxG = g; b.boxPile = el('g', {}, g); b.boxShown = -1;
@@ -400,6 +446,8 @@ function makePart(stage, parent) {
 
 /* ---------- simulation ---------- */
 let running = true, speed = 4, simT = 0, finished = 0;
+const fin = [0, 0];            // parts off the end of each product's route
+let lastOut = 0;               // product of the latest part off the line: the GOOD / REJECT on screen count for it
 const hist = { pts: [], every: 10, next: 0 };   // OEE of each machine every `every` s of line time, for the dashboard
 const st = MACHINES.map(() => ({ mode: 'starved', t: 0, part: null, done: 0, bad: 0, run: 0, t0: 0, last: 0, wait: 0, block: 0, stop: 0, pulse: 0 }));
 // the board (when connected) holds a machine with its run switch or the alarm, and finishes parts with its buttons
@@ -433,18 +481,28 @@ function push(b, stage) {
   if (b.parts.length && b.parts[b.parts.length - 1].s < GAP) return false;
   b.parts.push({ s: 0, stage, g: makePart(stage, b.partG) }); return true;
 }
-// QC presses so far: the board's buttons, or the GOOD / REJECT on screen without a board
-const qc = () => (boardLive() ? { good: BOARD().qc.good, rej: BOARD().qc.rej } : { good: window.__qcLocal?.good || 0, rej: window.__qcLocal?.reject || 0 });
+// QC presses so far, per product: the board's buttons (the board says which product), or the GOOD / REJECT
+// on screen without a board, which count for the product whose part came off the line most recently
+const qcL = [{ good: 0, rej: 0 }, { good: 0, rej: 0 }], qcSeen = { good: 0, reject: 0 };
+function followLocalQc() {
+  const l = window.__qcLocal;
+  if (!l) return;
+  if (!boardLive()) { qcL[lastOut].good += Math.max(0, l.good - qcSeen.good); qcL[lastOut].rej += Math.max(0, l.reject - qcSeen.reject); }
+  qcSeen.good = l.good; qcSeen.reject = l.reject;
+}
+const qcOf = (p) => (boardLive() ? BOARD().qcP?.[p] || { good: 0, rej: 0 } : qcL[p]);
+const qc = () => { const a = qcOf(0), b = qcOf(1); return { good: a.good + b.good, rej: a.rej + b.rej }; };
 function step(dt) {
   simT += dt;
   BELTS.forEach((b) => {
     const v = SPEED * dt; b.off += v;
     b.parts.forEach((p, k) => { p.s = Math.min(p.s + v, k === 0 ? b.len - 18 : b.parts[k - 1].s - GAP); });
-    if (b.to === 9 && b.parts.length && b.parts[0].s >= b.len - 18.5) { b.parts.shift().g.remove(); finished++; b.binText.textContent = finished + ' parts'; }
+    if (b.to === 9 && b.parts.length && b.parts[0].s >= b.len - 18.5) { b.parts.shift().g.remove(); finished++; fin[b.product]++; lastOut = b.product; }
   });
   BELTS.forEach((b) => { if (b.box.length && push(b, b.box[0])) b.box.shift(); });
   MACHINES.forEach((m, i) => {
     const s = st[i], ib = inBelt(i), ob = outBelt(i);
+    if (prodOf(i) < 0) return;                                  // in no route: idle
     if (s.mode === 'starved') {
       if (!ib) { s.part = { stage: 0 }; s.mode = 'run'; s.t = 0; s.t0 = simT; }       // bar feeder never runs dry
       else if (ib.parts[0] && ib.parts[0].s >= ib.len - 18.5) { const p = ib.parts.shift(); p.g.remove(); s.part = p; s.mode = 'run'; s.t = 0; s.t0 = simT; }
@@ -536,7 +594,8 @@ function reset() {
   BELTS.forEach((b) => { b.parts.forEach((p) => p.g.remove()); b.parts = []; b.box = []; });
   st.forEach((s) => Object.assign(s, { mode: 'starved', t: 0, part: null, done: 0, bad: 0, run: 0, t0: 0, last: 0, wait: 0, block: 0, stop: 0, pulse: 0 }));
   window.__board?.reset();
-  simT = 0; finished = 0; BELTS[BELTS.length - 1].binText.textContent = '0 parts';
+  simT = 0; finished = 0; fin[0] = fin[1] = 0; lastOut = ROUTE[0].length ? 0 : 1;
+  qcL.forEach((q) => { q.good = q.rej = 0; }); followLocalQc();
   frameSnap = null;
   hist.pts = []; hist.every = 10; hist.next = 0;
 }
@@ -610,6 +669,8 @@ function render() {
     if (sp > 1) s.bar.dataset.over = ''; else delete s.bar.dataset.over;
     const bx = boardX(i), bs = bx ? BOARD().stats[i] : null;
     s.n.textContent = `✓ ${(bx || x).done}` + ((bx || x).bad ? `  ✕ ${(bx || x).bad}` : '');
+    const pr = prodOf(i);
+    if (s.pr.dataset.p !== String(pr)) { s.pr.dataset.p = pr; s.pr.textContent = pr < 0 ? 'idle' : PRODUCTS[pr]; s.tag.classList.toggle('idle', pr < 0); }
     s.ct.textContent = bs ? (bs.gap ? bs.gap.toFixed(1) + ' s/ชิ้น' : '— s/ชิ้น') : sp > 0 ? (s.m.cycle / sp).toFixed(1) + ' s/ชิ้น' : '— s/ชิ้น';
     if (sp > 0 && sp < 1) s.ct.dataset.slow = ''; else delete s.ct.dataset.slow;
     s.ctx.textContent = `std ${s.m.cycle} s · last ${x.last ? x.last.toFixed(1) + ' s' : '—'}`;
@@ -622,12 +683,15 @@ function render() {
     if (simT > 30 && u > best) { best = u; bn = s.m.no + ' ' + s.m.name.split(' ')[0]; }
   });
   BELTS.forEach((b) => (wip += b.parts.length + b.box.length));
-  const q = qc(), checked = q.good + q.rej, wait = Math.max(0, finished - checked);
-  stacks(wait, q.good, q.rej);
-  out.tot.textContent = finished; out.wait.textContent = wait; out.good.textContent = q.good; out.bad.textContent = q.rej;
-  out.yld.textContent = checked ? Math.round(q.good / checked * 100) + '%' : '—';
-  out.ybar.style.width = (checked ? q.good / checked * 100 : 0) + '%';
-  out.by.textContent = wait ? `${wait} รอตรวจ · กด GOOD / REJECT เพื่อคัดกอง 1` : checked ? 'ตรวจครบแล้ว' : 'ยังไม่มีชิ้นงานออกจากไลน์';
+  followLocalQc();
+  outs.forEach((out) => {
+    const q = qcOf(out.p), checked = q.good + q.rej, wait = Math.max(0, fin[out.p] - checked);
+    out.stacks(wait, q.good, q.rej);
+    out.tot.textContent = fin[out.p]; out.wait.textContent = wait; out.good.textContent = q.good; out.bad.textContent = q.rej;
+    out.yld.textContent = checked ? Math.round(q.good / checked * 100) + '%' : '—';
+    out.ybar.style.width = (checked ? q.good / checked * 100 : 0) + '%';
+    out.by.textContent = wait ? `${wait} รอตรวจ · กด GOOD / REJECT เพื่อคัดกอง 1` : checked ? 'ตรวจครบแล้ว' : 'ยังไม่มีชิ้นงานออกจากไลน์';
+  });
   $l('fin').textContent = finished; $l('wip').textContent = wip; $l('bn').textContent = bn;
   $l('th').textContent = simT > 60 ? (finished / (simT / 3600)).toFixed(0) + ' /h' : '— /h';
   $l('time').textContent = fmt(simT);
@@ -785,6 +849,8 @@ function renderDash() {
     ['yield', total ? pct(finished / total) : '—', 'good ÷ all parts'],
     ['throughput', simT > 60 ? (finished / (simT / 3600)).toFixed(0) + ' /h' : '—', 'good parts per hour'],
     ['line time', fmt(simT), BB ? (BB.al ? 'ALARM' : 'board · real time') : running ? 'running' : 'paused'],
+    ...ROUTE.map((ms, p) => [ms, p]).filter(([ms]) => ms.length).map(([ms, p]) => { const qp = qcOf(p);
+      return [`product ${PRODUCTS[p]}`, fin[p], `${ms.map((i) => MACHINES[i].no).join(' → ')} · ✓ ${qp.good} · ✕ ${qp.rej}`]; }),
   ].map(([k, v, e]) => `<div class="od-kpi"><small>${k}</small><b>${v}</b><em>${e}</em></div>`).join('');
   }
   MACHINES.forEach((m, i) => {
@@ -876,6 +942,11 @@ function contentBox() {
   const xs = [], ys = [];
   MACHINES.forEach((m) => { xs.push(m.x, m.x + m.w); ys.push(m.y, m.y + m.h); });
   BELTS.forEach((b) => b.segs.forEach((s) => { xs.push(s.a[0] - 60, s.b[0] - 60, s.a[0] + 60, s.b[0] + 160); ys.push(s.a[1] + 40, s.b[1] + 140); }));
+  // the output piles beside the end of each product's last belt (see makeStacks)
+  BELTS.filter((b) => b.to === 9).forEach((b) => {
+    const e = b.segs[b.segs.length - 1].b, Y = b.compact ? 220 : 660;
+    xs.push(e[0] + 40 + 130 - Y, e[0] + 40 + 460); ys.push(e[1] - 160, e[1] + 4 + (460 + Y) / 2);
+  });
   const x0 = Math.min(...xs), y0 = Math.min(...ys);
   return [x0, y0, Math.max(...xs) - x0, Math.max(...ys) - y0];
 }
@@ -897,7 +968,7 @@ view.addEventListener('wheel', (e) => {
 }, { passive: false });
 let drag = null;
 view.addEventListener('pointerdown', (e) => {
-  if (e.target.closest('.lf-tag, .lf-full') || (e.target.closest('.lf-slot') && e.target.closest('svg *, canvas'))) return;
+  if (e.target.closest('.lf-tag, .lf-full, .lf-route') || (e.target.closest('.lf-slot') && e.target.closest('svg *, canvas'))) return;
   drag = { x: e.clientX, y: e.clientY, cx: cam.x, cy: cam.y, moved: false };
   view.setPointerCapture(e.pointerId); view.classList.add('drag');
 });
@@ -944,6 +1015,76 @@ fit(false);
 setTimeout(() => {
   document.querySelectorAll('.lf-slot [data-toggle][aria-pressed="true"]').forEach((b) => b.click());
 }, 400);
+/* ---------- products: route editor ----------
+   Click machines in order for each product (click again to take one out), then Apply. With a board
+   connected the route goes to the board, and the line follows once the board reports it back. */
+function setRoute(r) {
+  if (routeText(r) === routeText(ROUTE)) return;
+  ROUTE = r;
+  try { localStorage.setItem(ROUTE_KEY, routeText(r)); } catch {}
+  buildLine(); reset(); fit(true); routeUi.show();
+}
+const routeUi = (() => {
+  const box = document.createElement('div');
+  box.className = 'lf-route';
+  box.innerHTML = `<button type="button" class="rt-h" aria-expanded="false"><span class="o-h">Products · เส้นทางผลิต</span><em class="rt-sum"></em><b>▾</b></button>
+    <div class="rt-body" hidden>${PRODUCTS.map((P, p) => `<div class="rt-row" data-p="${p}"><span class="o-p">${P}</span>${MACHINES.map((m, i) => `<button type="button" class="rt-m" data-i="${i}" title="${m.no} ${m.name}">${m.no}</button>`).join('')}<em class="rt-seq"></em></div>`).join('')}
+    <div class="rt-f"><button type="button" class="lb-btn" data-r="apply">Apply</button><button type="button" class="lb-btn" data-r="undo">Undo</button><small class="rt-msg"></small></div></div>`;
+  tagsBox.appendChild(box);
+  const head = box.querySelector('.rt-h'), body = box.querySelector('.rt-body');
+  head.addEventListener('click', () => { body.hidden = !body.hidden; head.setAttribute('aria-expanded', String(!body.hidden)); });
+  let draft = ROUTE.map((ms) => ms.slice()), waitFor = null;
+  const msg = box.querySelector('.rt-msg');
+  const say = (t) => { msg.textContent = t; };
+  function show() {
+    box.querySelectorAll('.rt-row').forEach((row) => {
+      const p = +row.dataset.p;
+      row.querySelectorAll('.rt-m').forEach((b) => {
+        const k = draft[p].indexOf(+b.dataset.i);
+        b.setAttribute('aria-pressed', String(k >= 0));
+        b.dataset.n = k >= 0 ? k + 1 : '';
+      });
+      row.querySelector('.rt-seq').textContent = draft[p].length ? draft[p].map((i) => MACHINES[i].no).join(' → ') + ' → out' : '— not made';
+    });
+    box.querySelector('.rt-sum').innerHTML = ROUTE.map((ms, p) => ms.length ? `<span class="o-p" data-p="${p}">${PRODUCTS[p]}</span>${ms.map((i) => MACHINES[i].no).join('→')}` : '').filter(Boolean).join(' ');
+    const changed = routeText(draft) !== routeText(ROUTE);
+    box.querySelector('[data-r="apply"]').disabled = !changed;
+    box.querySelector('[data-r="undo"]').disabled = !changed;
+    if (!changed && !waitFor) say(boardLive() ? 'set on the board' : 'click machines in order');
+  }
+  box.addEventListener('click', (e) => {
+    const m = e.target.closest('.rt-m');
+    if (m) {
+      const p = +m.closest('.rt-row').dataset.p, i = +m.dataset.i, k = draft[p].indexOf(i);
+      if (k >= 0) draft[p].splice(k, 1);
+      else { draft[1 - p] = draft[1 - p].filter((x) => x !== i); draft[p].push(i); }
+      say('Apply to use it · parts on the belts are cleared');
+      return show();
+    }
+    const r = e.target.closest('[data-r]')?.dataset.r;
+    if (r === 'undo') { draft = ROUTE.map((ms) => ms.slice()); return show(); }
+    if (r !== 'apply') return;
+    if (!draft[0].length && !draft[1].length) return say('pick at least one machine');
+    const want = routeText(draft);
+    if (!boardLive()) return setRoute(draft.map((ms) => ms.slice()));
+    if (!BOARD().setRoute) return say('this connection can\'t send to the board');
+    say('sending to the board …');
+    waitFor = want;
+    BOARD().setRoute(want).catch((err) => { waitFor = null; say('could not send: ' + (err?.message || err)); });
+    setTimeout(() => { if (waitFor === want) { waitFor = null; say('the board did not take it (MQTT: the web user needs write access to …/route/set)'); } }, 4000);
+  });
+  // the board's route wins while it is connected
+  window.__board?.on('route', (t) => {
+    const r = parseRoute(t);
+    if (!r) return;
+    if (waitFor === routeText(r)) { waitFor = null; say('the board took it'); }
+    draft = r.map((ms) => ms.slice());
+    setRoute(r); show();
+  });
+  show();
+  return { show() { if (!waitFor) draft = ROUTE.map((ms) => ms.slice()); show(); } };
+})();
+
 window.__line = { MACHINES, BELTS, slots, placeTags, fit, oeeOf, speedChanged() {}, finish(i) { const s = st[i]; if (s && s.mode === 'run') s.t = Math.max(s.t, MACHINES[i].cycle); },
   toggleDoor(i) { const s = slots[i]; if (s && !boardLive() && s.door.can()) s.door.toggle(); } };
 

@@ -27,6 +27,7 @@ flowchart LR
     claude["Claude<br/>(MCP)"]
 
     hw -- "MQTT: board · events · minutes" --> mq
+    mq -- "route/set (เส้นทางผลิต)" --> hw
     mq --> tg
     tg --> pg
     tg --> ifx
@@ -45,7 +46,7 @@ flowchart LR
 ```
 
 - **ESP32** อ่านปุ่ม / สวิตช์ แล้วส่ง 3 topic ผ่าน MQTT: `board` (สถานะสด ~1 ครั้ง/วินาที), `events` (กดปุ่ม, เปิดฝา, เดิน / หยุด, ผลิตเสร็จ 1 ชิ้น), `minutes` (สรุปทุก 1 นาที / เครื่อง)
-- **Mosquitto** เป็นตัวกลาง: ส่งต่อให้ Telegraf และให้หน้าเว็บผ่าน WebSocket
+- **Mosquitto** เป็นตัวกลาง: ส่งต่อให้ Telegraf และให้หน้าเว็บผ่าน WebSocket · หน้าเว็บส่งเส้นทางผลิตกลับไปที่บอร์ดทาง `route/set`
 - **Telegraf** เขียนทุกข้อความลง **PostgreSQL** (ที่เก็บหลัก, คำนวณ OEE ด้วย view `oee_daily` / `oee_hourly`) และ **InfluxDB** (ให้ Grafana วาดกราฟสด)
 - **sheets-sync** อ่านสรุป OEE จาก PostgreSQL ส่งขึ้น **Google Sheet**
 - **Claude** อ่าน database ผ่าน MCP ด้วย user `reader` (อ่านอย่างเดียว)
@@ -204,7 +205,7 @@ server ส่งสรุป OEE ขึ้นชีตทุก 15 นาที 
 |---|---|---|
 | หน้าเว็บ | `http://<SERVER_IP>:8080` | Board via **MQTT** → user `web` · password = `MQTT_WEB_PASS` → **Connect** |
 | หน้าเว็บจากบอร์ด | `http://192.168.1.200` | ไม่ต้อง login — ต่อบอร์ดผ่าน Wi-Fi ให้เอง |
-| หน้าเว็บจากที่ไหนก็ได้ | `https://oee.<domain>` | ดูขั้นตอนที่ 11 |
+| หน้าเว็บจากที่ไหนก็ได้ | `https://oee.<domain>` | ดูขั้นตอนที่ 12 |
 | Grafana | `http://<SERVER_IP>:3000` | `admin` / `GRAFANA_ADMIN_PASSWORD` |
 | InfluxDB | `http://<SERVER_IP>:8086` | `admin` / `INFLUX_ADMIN_PASSWORD` |
 | PostgreSQL | `<SERVER_IP>:5432` database `factory` | `reader` / `PG_READER_PASS` (อ่านอย่างเดียว) · `factory_admin` / `PG_ADMIN_PASSWORD` |
@@ -259,7 +260,30 @@ docker compose start telegraf sheets-sync
 
 ---
 
-## 11. (ไม่บังคับ) เข้าหน้าเว็บจากที่ไหนก็ได้ด้วย Cloudflare Tunnel
+## 11. เลือกเส้นทางผลิต 2 product
+
+เครื่อง 4 เครื่องแบ่งผลิตได้ 2 product (A / B) และเลือกได้ว่าแต่ละ product ผ่านเครื่องไหน เรียงลำดับอย่างไร
+
+1. บนหน้าเว็บ แท็บ **Line** → กล่อง **Products · เส้นทางผลิต** มุมขวาบน → กดเพื่อเปิด
+2. แถว **A**: กดเครื่องตามลำดับที่ต้องการ (เช่น 01 แล้ว 02) · แถว **B**: กดเครื่องที่เหลือ (เช่น 03 แล้ว 04) — กดซ้ำเพื่อเอาออก
+3. กด **Apply** → สายพานบนหน้าจอวาดใหม่ตามเส้นทาง (A สีฟ้า, B สีม่วง) และมีกล่อง Output + กอง QC / FG / NG แยกของแต่ละ product
+
+| ตัวอย่าง | ความหมาย |
+|---|---|
+| `1234-` | product เดียว ผ่าน 01 → 02 → 03 → 04 (เหมือนไลน์เดิม) |
+| `12-34` | A: 01 → 02 · B: 03 → 04 |
+| `13-24` | A: 01 → 03 · B: 02 → 04 (สายพานทแยงผ่านทางเดินกลาง) |
+| `2-4` | A: 02 · B: 04 · เครื่อง 01, 03 ไม่ได้ใช้ (idle) |
+
+- 1 เครื่องอยู่ได้ product เดียว · เครื่องแรกของแต่ละเส้นทางมีวัตถุดิบเอง · เครื่องสุดท้ายคือ output ของ product นั้น
+- **ต่อบอร์ดอยู่:** เส้นทางถูกส่งไปที่บอร์ด (ทุกช่องทาง: USB / Bluetooth / Wi-Fi / MQTT) บอร์ดจำไว้แม้ปิดเครื่อง และหน้าเว็บทุกเครื่องเปลี่ยนตาม · **ไม่ได้ต่อบอร์ด:** ใช้กับการจำลองบนหน้าจอ และจำไว้ในเบราว์เซอร์นั้น
+- เปลี่ยนเส้นทางแล้ว **ชิ้นงานที่ค้างบนสายพานหายไป** และบันทึก event `route` ลง database
+- ปุ่ม **GOOD / REJECT** นับให้ product ที่มีชิ้นงานออกจากไลน์ล่าสุด
+- database: OEE ของแต่ละเครื่องมีคอลัมน์ `product` · ผลผลิตต่อ product ดูที่ view `product_daily` · ประวัติเส้นทางดูที่ `route_history` · Google Sheet มีแท็บ **Products** (ถ้าเคยตั้ง Apps Script ไว้แล้ว ให้วาง `sheets_webapp.gs` ตัวใหม่ แล้ว **Deploy → Manage deployments → ✏️ → Version: New version → Deploy**)
+
+---
+
+## 12. (ไม่บังคับ) เข้าหน้าเว็บจากที่ไหนก็ได้ด้วย Cloudflare Tunnel
 
 ต้องมี domain ที่ใช้ DNS ของ Cloudflare แล้ว · ไม่ต้องเปิดพอร์ตที่เราเตอร์ เพราะ tunnel ต่อออกจากเครื่อง server ไปหา Cloudflare เอง
 
@@ -295,8 +319,15 @@ docker compose ps            # ดูสถานะ
 docker compose restart       # รีสตาร์ททุกตัว
 docker compose down          # หยุดทั้งหมด (ข้อมูลยังอยู่)
 docker compose up -d         # เปิดอีกครั้ง
-git pull && docker compose up -d   # อัปเดตโค้ดล่าสุดจาก GitHub
 ```
+
+**อัปเดตโค้ดล่าสุดจาก GitHub** (ข้อมูลเดิมไม่หาย):
+```bash
+git pull
+docker compose up -d --force-recreate --build                      # ใช้ไฟล์ตั้งค่าใหม่ทุกตัว
+docker compose exec timescaledb sh /docker-entrypoint-initdb.d/init.sh   # อัปเดตตาราง / view ใน database
+```
+แล้วอัปโหลดโค้ดบอร์ดใหม่ (ขั้นตอนที่ 6) ถ้า `esp32/` เปลี่ยน · ต้องใช้ `--force-recreate` เพราะ `git pull` แทนที่ไฟล์ตั้งค่า แต่ container ที่เปิดอยู่จะยังอ่านไฟล์เก่า
 - ระบบเปิดเองหลังรีบูตเครื่อง (Docker Desktop: Settings → General → *Start Docker Desktop when you sign in*)
 - ข้อมูลอยู่ใน Docker volume ไม่ใช่ในโฟลเดอร์ repo — ลบโฟลเดอร์ไม่ทำให้ข้อมูลหาย แต่ **`docker compose down -v` ลบข้อมูลหมด**
 
@@ -317,6 +348,8 @@ git pull && docker compose up -d   # อัปเดตโค้ดล่าส�
 | `https://oee.<domain>` ขึ้น 502 / 1033 | tunnel ไม่ได้เปิด / hostname ผิด | `docker compose --profile tunnel up -d` · URL ต้องเป็น `web:80` ไม่ใช่ `localhost:8080` |
 | หน้า https ต่อ MQTT ไม่ได้ | broker ผิด | ต้องเป็น `wss://oee.<domain>/mqtt` (ลบค่าเก่าในช่อง broker) |
 | แก้หน้าเว็บแล้วแต่หน้าจากบอร์ดไม่เปลี่ยน | ยังไม่ได้สร้าง `web_files.h` ใหม่ | `python3 esp32/build_web.py` แล้วอัปโหลดบอร์ด |
+| กด Apply เส้นทางแล้วขึ้น `the board did not take it` | บอร์ดยังเป็นโค้ดเก่า / MQTT ACL เก่า | อัปโหลดโค้ดบอร์ดใหม่ · `docker compose up -d --force-recreate mosquitto` |
+| แก้ไฟล์ใน `server/` แล้วไม่มีผล | container ยังอ่านไฟล์เก่า | `docker compose up -d --force-recreate <ชื่อ>` |
 
 ---
 

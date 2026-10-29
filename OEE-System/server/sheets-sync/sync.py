@@ -4,6 +4,7 @@
 # claude.ai can read it through Google Drive. Each run replaces these tabs (google-sheets/sheets_webapp.gs):
 #   OEE_Daily   one row per machine per day, all history
 #   OEE_Hourly  one row per machine per hour, last SHEETS_HOURLY_DAYS days
+#   Products    one row per product per day: output, QC good / reject, quality, all history
 #   Machines    names and ideal_cycle_s (edit them in the database, not in the sheet)
 #   Events      the last SHEETS_EVENTS_ROWS button / switch presses, newest first; sent again within
 #               ~SHEETS_EVENTS_GAP_S seconds of a new one, so a press can be seen in the sheet straight away
@@ -28,17 +29,20 @@ EVENTS_GAP = max(5, int(os.environ.get("SHEETS_EVENTS_GAP_S", "10")))
 RATIOS = "availability, performance, quality, oee"
 TABS = {
     "OEE_Daily": f"""
-        SELECT to_char(day, 'YYYY-MM-DD') AS date, line, machine, name, logged_min, run_min, stop_min, alarm_min,
+        SELECT to_char(day, 'YYYY-MM-DD') AS date, line, machine, product, name, logged_min, run_min, stop_min, alarm_min,
                parts, ideal_cycle_s, good, reject, {RATIOS}
         FROM oee_daily ORDER BY day, line, machine""",
     "OEE_Hourly": f"""
-        SELECT to_char(period_start, 'YYYY-MM-DD HH24:MI') AS hour, line, machine, name, logged_min, run_min,
+        SELECT to_char(period_start, 'YYYY-MM-DD HH24:MI') AS hour, line, machine, product, name, logged_min, run_min,
                stop_min, alarm_min, parts, ideal_cycle_s, good, reject, {RATIOS}
         FROM oee('1 hour', date_trunc('day', now()) - make_interval(days => %s)) ORDER BY 1, 2, 3""",
+    "Products": """
+        SELECT to_char(day, 'YYYY-MM-DD') AS date, line, product, output, good, reject, quality
+        FROM product_daily ORDER BY day, line, product""",
     "Machines": "SELECT line, machine, name, ideal_cycle_s FROM machines ORDER BY line, machine",
     "Events": """
         SELECT to_char(e.time, 'YYYY-MM-DD HH24:MI:SS') AS time, e.line, e.machine,
-               CASE WHEN e.machine = 0 THEN 'whole line' ELSE m.name END AS name, e.event
+               CASE WHEN e.machine = 0 THEN 'whole line' ELSE m.name END AS name, e.event, e.product, e.route
         FROM events e LEFT JOIN machines m ON m.line = e.line AND m.machine = e.machine
         ORDER BY e.time DESC LIMIT %s""",
 }

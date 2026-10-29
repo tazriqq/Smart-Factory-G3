@@ -11,9 +11,14 @@
 //              server stores in its database to work out OEE (server/postgres/schema.sql)
 //
 // The machines: each one makes a part every CYCLE_MS (at 100 % speed) while it runs, i.e. its run switch
-// is on, there is no alarm, its knob is above 0 % and its door is closed. Machine 1 always has material;
-// machines 2-4 start a part only when the machine before has handed one over (up to BUF_CAP waiting),
-// so the line flows like the website draws it. Machine 4's parts are the line's output.
+// is on, there is no alarm, its knob is above 0 % and its door is closed.
+// Products: the route says which machines make product A and which make product B, in order, e.g. "12-34"
+// (A = machine 1 then 2, B = machine 3 then 4) or "1234-" (one product through all four). The first machine
+// of a route always has material; the next ones start a part only when the machine before has handed one
+// over (up to BUF_CAP waiting); the last machine's parts are that product's output. A machine left out of
+// both routes stands idle. The website sets the route (any connection, see "route" below); it is kept in
+// flash, and changing it clears the parts in progress. GOOD / REJECT count for the product whose output
+// part came off most recently.
 //
 // The line:
 //   {"pot":[512,700,1023,0],"run":[1,0,1,1],"door":[0,0,1,0],"al":0,"cnt":[12,5,8,3],"good":10,"rej":2,"ms":123456}
@@ -25,12 +30,19 @@
 //   good  QC good presses since power-on
 //   rej   QC reject presses since power-on
 //   ms    time since power-on, so the pages can tell when the board restarted
+//   route the products' routes, e.g. "12-34"
+//   out   output parts of product A, B since power-on (or since the route last changed)
+//   qg/qr QC good / reject presses for product A, B (same counting)
+//
+// Setting the route: send the text line "route 12-34" by USB (Serial) or Bluetooth (NUS RX), or
+//   POST http://192.168.1.200/route with the body "12-34", or publish "12-34" to MQTT_ROUTE_SET.
 //
 // Rows for the database (one JSON message each):
 //   events   {"machine":1,"event":"part","age_ms":0}
-//            machine 1-4, 0 = the whole line; event = part, run_on, run_off, door_open, door_close,
-//            alarm_on, alarm_off, good, reject, boot
-//   minutes  {"machine":1,"run_s":55,"stop_s":5,"alarm_s":0,"parts":1,"speed_pct":100,"age_ms":0}
+//            machine 1-4, 0 = the whole line; event = part, output (the last machine of a route finished
+//            a product), run_on, run_off, door_open, door_close, alarm_on, alarm_off, good, reject, boot,
+//            route (the route changed; "route":"12-34"); part / output / good / reject carry "product":"A"
+//   minutes  {"machine":1,"product":"A","run_s":55,"stop_s":5,"alarm_s":0,"parts":1,"speed_pct":100,"age_ms":0}
 //            run = run switch on, no alarm, knob above 0 % and door closed  (the same rule as the website)
 //   age_ms = how long the row waited here (rows queue while MQTT is down), so the server can set the
 //   right time without the board needing the internet for its clock
@@ -56,6 +68,7 @@
 #include <BLEServer.h>
 #include <BLEUtils.h>
 #include <BLE2902.h>
+#include <Preferences.h>
 #include "web_files.h"   // the website, gzipped (esp32/build_web.py)
 
 // passwords and private addresses live in secrets.h, which is not uploaded to GitHub
@@ -71,6 +84,8 @@ struct Row {
   int8_t machine;        // 1-4, 0 = the whole line
   uint32_t at;           // millis() when it happened
   char ev[12];
+  char prod;             // 'A' / 'B', 0 = no product
+  char route[8];         // only for the "route" event
   uint16_t runS, stopS, alarmS, parts, speed;
 };
 
@@ -99,6 +114,7 @@ const char* MQTT_TOPIC  = "group3/dpx/line1/board";    // the website subscribes
 const char* MQTT_STATUS = "group3/dpx/line1/status";   // "online" / "offline", kept by the broker
 const char* MQTT_EVENTS  = "group3/dpx/line1/events";  // rows for the database
 const char* MQTT_MINUTES = "group3/dpx/line1/minutes";
+const char* MQTT_ROUTE_SET = "group3/dpx/line1/route/set";   // the website sets the route here
 
 // ---------- pins ----------
 const int POT_PIN[4]  = {32, 33, 34, 35};
@@ -112,7 +128,7 @@ const int LED_PIN     = 2;
 // ---------- Bluetooth: Nordic UART Service (the pages look for this) ----------
 #define BLE_NAME     "CNC-Knobs"
 #define NUS_SERVICE  "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
-#define NUS_RX       "6e400002-b5a3-f393-e0a9-e50e24dcca9e"   // page -> board (unused)
+#define NUS_RX       "6e400002-b5a3-f393-e0a9-e50e24dcca9e"   // page -> board (commands, e.g. "route 12-34")
 #define NUS_TX       "6e400003-b5a3-f393-e0a9-e50e24dcca9e"   // board -> page (notify)
 
 // ---------- timing ----------
@@ -163,8 +179,62 @@ const uint32_t CYCLE_MS[4] = {18000, 30000, 24000, 36000};   // one part at 100 
 const int BUF_CAP = 48;                                      // parts that fit between two machines
 float workMs[4] = {0, 0, 0, 0};                              // progress on the part in the machine
 bool busy[4] = {false, false, false, false};                 // a part is in the machine
-int buf[3] = {0, 0, 0};                                      // parts waiting after machines 1-3
+int bufAfter[4] = {0, 0, 0, 0};                              // parts waiting after machine n for the next one
 uint32_t goodCount = 0, rejCount = 0;
+
+// ---------- products ----------
+char route[8] = "1234-";        // product A's machines, "-", product B's machines
+int prodOf[4];                  // 1 = A, 2 = B, 0 = in no route (idle)
+int prevOf[4], nextOf[4];       // the machine before / after in its route, -1 = none
+uint32_t outCount[2], goodP[2], rejP[2];   // per product: output parts, QC good, QC reject
+int lastOut = 0;                // product (0 = A, 1 = B) of the latest output part: QC buttons count for it
+bool routeChanged = false;      // set by a command, so loop() sends a line at once
+Preferences prefs;
+
+void logEvent(int machine, const char* ev, int prod = -1, const char* rt = nullptr);   // rows for the database, below
+
+// "12-34": A = machines 1, 2 / B = machines 3, 4 ("1234" = A only, "-34" = B only). Each machine at most once.
+// Returns false (and changes nothing) for anything else. Clears the parts in progress.
+bool setRoute(const char* text, bool save) {
+  int prod[4] = {0, 0, 0, 0}, order[2][4], len[2] = {0, 0}, p = 0;
+  for (const char* c = text; *c; c++) {
+    if (*c == ' ' || *c == '\r' || *c == '\n') continue;
+    if (*c == '-') { if (++p > 1) return false; continue; }
+    int n = *c - '1';
+    if (n < 0 || n > 3 || prod[n]) return false;
+    prod[n] = p + 1;
+    order[p][len[p]++] = n;
+  }
+  if (len[0] + len[1] == 0) return false;
+  int k = 0;
+  for (p = 0; p < 2; p++) {
+    for (int i = 0; i < len[p]; i++) route[k++] = '1' + order[p][i];
+    if (p == 0) route[k++] = '-';
+  }
+  route[k] = '\0';
+  for (int n = 0; n < 4; n++) { prodOf[n] = prod[n]; prevOf[n] = nextOf[n] = -1; busy[n] = false; workMs[n] = 0; bufAfter[n] = 0; }
+  for (p = 0; p < 2; p++)
+    for (int i = 0; i < len[p]; i++) {
+      if (i > 0) prevOf[order[p][i]] = order[p][i - 1];
+      if (i < len[p] - 1) nextOf[order[p][i]] = order[p][i + 1];
+    }
+  for (p = 0; p < 2; p++) outCount[p] = goodP[p] = rejP[p] = 0;
+  lastOut = len[0] ? 0 : 1;
+  if (save) {
+    prefs.putString("route", route);
+    logEvent(0, "route", -1, route);
+    Serial.printf("# Route: %s\n", route);
+  }
+  return true;
+}
+
+// a text command from any connection; only "route <A>-<B>" so far
+void handleCommand(const char* cmd) {
+  while (*cmd == ' ') cmd++;
+  if (strncmp(cmd, "route", 5) != 0) return;
+  if (setRoute(cmd + 5, true)) routeChanged = true;
+  else Serial.printf("# Route: \"%s\" is not a route (example: route 12-34)\n", cmd + 5);
+}
 uint16_t potValue[4] = {0, 0, 0, 0};
 float potFiltered[4] = {0, 0, 0, 0};
 
@@ -186,8 +256,6 @@ int speedPct(int n) {
   return (int)lroundf(potValue[n] / 1023.0f * 40.0f) * 5;
 }
 
-void logEvent(int machine, const char* ev);   // rows for the database, below
-
 // true when anything the pages care about changed
 bool readSwitches() {
   bool changed = false;
@@ -198,8 +266,8 @@ bool readSwitches() {
   }
   int a = updateInput(alarmIn);
   if (a != 0) { changed = true; logEvent(0, a > 0 ? "alarm_on" : "alarm_off"); }
-  if (updateInput(goodIn) == 1) { goodCount++; changed = true; logEvent(0, "good"); }
-  if (updateInput(rejIn) == 1) { rejCount++; changed = true; logEvent(0, "reject"); }
+  if (updateInput(goodIn) == 1) { goodCount++; goodP[lastOut]++; changed = true; logEvent(0, "good", lastOut); }
+  if (updateInput(rejIn) == 1) { rejCount++; rejP[lastOut]++; changed = true; logEvent(0, "reject", lastOut); }
   digitalWrite(LED_PIN, alarmIn.stable ? HIGH : LOW);
   return changed;
 }
@@ -211,12 +279,15 @@ int makeLine(char* buf, size_t size) {
     n += snprintf(buf + n, size - n, "\"pot\":[%u,%u,%u,%u],",
                   potValue[0], potValue[1], potValue[2], potValue[3]);
   n += snprintf(buf + n, size - n,
-                "\"run\":[%d,%d,%d,%d],\"door\":[%d,%d,%d,%d],\"al\":%d,\"cnt\":[%lu,%lu,%lu,%lu],\"good\":%lu,\"rej\":%lu,\"ms\":%lu}",
+                "\"run\":[%d,%d,%d,%d],\"door\":[%d,%d,%d,%d],\"al\":%d,\"cnt\":[%lu,%lu,%lu,%lu],\"good\":%lu,\"rej\":%lu,\"ms\":%lu,"
+                "\"route\":\"%s\",\"out\":[%lu,%lu],\"qg\":[%lu,%lu],\"qr\":[%lu,%lu]}",
                 runIn[0].stable, runIn[1].stable, runIn[2].stable, runIn[3].stable,
                 doorOpen[0], doorOpen[1], doorOpen[2], doorOpen[3], alarmIn.stable,
                 (unsigned long)partCount[0], (unsigned long)partCount[1],
                 (unsigned long)partCount[2], (unsigned long)partCount[3],
-                (unsigned long)goodCount, (unsigned long)rejCount, (unsigned long)millis());
+                (unsigned long)goodCount, (unsigned long)rejCount, (unsigned long)millis(),
+                route, (unsigned long)outCount[0], (unsigned long)outCount[1], (unsigned long)goodP[0], (unsigned long)goodP[1],
+                (unsigned long)rejP[0], (unsigned long)rejP[1]);
   return n;
 }
 
@@ -224,7 +295,7 @@ int makeLine(char* buf, size_t size) {
 // Wi-Fi
 // ======================================================================
 WebServer server(80);
-char lastLine[256] = "{}";
+char lastLine[384] = "{}";
 
 void handleData() {
   server.sendHeader("Access-Control-Allow-Origin", "*");            // pages opened from a file
@@ -233,10 +304,21 @@ void handleData() {
   server.send(200, "application/json", lastLine);
 }
 
+// POST /route with the body "12-34" sets the route; GET /route gives the current one
+void handleRoute() {
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  server.sendHeader("Access-Control-Allow-Private-Network", "true");
+  if (server.method() == HTTP_POST) {
+    if (!setRoute(server.arg("plain").c_str(), true)) { server.send(400, "text/plain", "not a route, e.g. 12-34\n"); return; }
+    routeChanged = true;
+  }
+  server.send(200, "text/plain", route);
+}
+
 void handleOptions() {
   server.sendHeader("Access-Control-Allow-Origin", "*");
   server.sendHeader("Access-Control-Allow-Private-Network", "true");
-  server.sendHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+  server.sendHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   server.sendHeader("Access-Control-Allow-Headers", "*");
   server.send(204);
 }
@@ -263,6 +345,9 @@ void startWiFi() {
   Serial.printf("# Wi-Fi: connecting to %s ...\n", ssid);
   server.on("/data", HTTP_GET, handleData);
   server.on("/data", HTTP_OPTIONS, handleOptions);
+  server.on("/route", HTTP_GET, handleRoute);
+  server.on("/route", HTTP_POST, handleRoute);
+  server.on("/route", HTTP_OPTIONS, handleOptions);
   if (USE_WEB) server.onNotFound(handleWeb);
   else server.on("/", HTTP_GET, []() { server.send(200, "text/plain", "Smart factory board. Live data: /data\n"); });
   server.begin();
@@ -283,6 +368,14 @@ WiFiClient mqttPlain;
 WiFiClientSecure mqttSecure;
 PubSubClient mqtt;
 
+// the only topic the board listens to: the route from the website
+void onMqttMessage(char* topic, byte* payload, unsigned int length) {
+  char text[16];
+  length = min(length, (unsigned int)sizeof text - 1);
+  memcpy(text, payload, length); text[length] = '\0';
+  if (setRoute(text, true)) routeChanged = true;
+}
+
 void startMQTT() {
   if (MQTT_TLS) {
     mqttSecure.setInsecure();                 // encrypted, but the broker's certificate is not checked
@@ -292,6 +385,7 @@ void startMQTT() {
     mqtt.setClient(mqttPlain);
   }
   mqtt.setServer(MQTT_HOST, MQTT_PORT);
+  mqtt.setCallback(onMqttMessage);
   mqtt.setBufferSize(512);
   mqtt.setSocketTimeout(3);
   mqtt.setKeepAlive(15);
@@ -313,6 +407,7 @@ void watchMQTT() {
   if (ok) {
     was = true;
     mqtt.publish(MQTT_STATUS, "online", true);
+    mqtt.subscribe(MQTT_ROUTE_SET);
     Serial.printf("# MQTT: connected, publishing to %s\n", MQTT_TOPIC);
   } else {
     Serial.printf("# MQTT: failed (state %d, free heap %u)\n", mqtt.state(), ESP.getFreeHeap());
@@ -356,11 +451,14 @@ void queueRow(const Row& r) {
   logCount++;
 }
 
-void logEvent(int machine, const char* ev) {
+// prod: 0 = A, 1 = B, -1 = none; rt: the route, for the "route" event
+void logEvent(int machine, const char* ev, int prod, const char* rt) {
   if (!USE_LOG) return;
   Row r = {};
   r.minute = 0; r.machine = machine; r.at = millis();
   strncpy(r.ev, ev, sizeof r.ev - 1);
+  r.prod = prod >= 0 ? 'A' + prod : 0;
+  if (rt) strncpy(r.route, rt, sizeof r.route - 1);
   queueRow(r);
 }
 
@@ -381,17 +479,22 @@ void tallyMachines(uint32_t dt) {
 bool workMachines(uint32_t dt) {
   bool made = false;
   for (int n = 0; n < 4; n++) {
+    if (!prodOf[n]) continue;                          // in no route: idle
     if (!busy[n]) {                                    // take the next part in, if there is one
-      if (n == 0) busy[n] = true;                      // machine 1 has its own bar feeder
-      else if (buf[n - 1] > 0) { buf[n - 1]--; busy[n] = true; }
+      if (prevOf[n] < 0) busy[n] = true;               // the first machine of a route has its own bar feeder
+      else if (bufAfter[prevOf[n]] > 0) { bufAfter[prevOf[n]]--; busy[n] = true; }
     }
     if (!busy[n] || !running(n)) continue;
     if (workMs[n] < CYCLE_MS[n]) workMs[n] += dt * speedPct(n) / 100.0f;
     if (workMs[n] < CYCLE_MS[n]) continue;
-    if (n < 3 && buf[n] >= BUF_CAP) continue;          // no room after it: wait with the part done
-    if (n < 3) buf[n]++;
+    int p = prodOf[n] - 1;
+    if (nextOf[n] >= 0) {
+      if (bufAfter[n] >= BUF_CAP) continue;            // no room after it: wait with the part done
+      bufAfter[n]++;
+    }
     partCount[n]++;
-    logEvent(n + 1, "part");
+    logEvent(n + 1, "part", p);
+    if (nextOf[n] < 0) { outCount[p]++; lastOut = p; logEvent(n + 1, "output", p); }   // off the end of its route
     busy[n] = false; workMs[n] = 0; made = true;
   }
   return made;
@@ -403,6 +506,7 @@ void writeSummary() {
     if (USE_LOG) {
       Row r = {};
       r.minute = 1; r.machine = n + 1; r.at = at;
+      r.prod = prodOf[n] ? 'A' + prodOf[n] - 1 : 0;
       r.runS = (runMs[n] + 500) / 1000; r.stopS = (stopMs[n] + 500) / 1000; r.alarmS = (alarmMs[n] + 500) / 1000;
       r.parts = partCount[n] - partsAtSummary[n];
       r.speed = speedPct(n);
@@ -418,13 +522,15 @@ void flushLog() {
   if (!logCount || !mqtt.connected()) return;
   for (int k = 0; k < 8 && logCount; k++) {
     const Row& r = logBuf[logHead];
-    char b[160];
+    char b[192], extra[40] = "";
     unsigned long age = millis() - r.at;
+    if (r.prod) snprintf(extra, sizeof extra, "\"product\":\"%c\",", r.prod);
+    else if (r.route[0]) snprintf(extra, sizeof extra, "\"route\":\"%s\",", r.route);
     if (r.minute)
-      snprintf(b, sizeof b, "{\"machine\":%d,\"run_s\":%u,\"stop_s\":%u,\"alarm_s\":%u,\"parts\":%u,\"speed_pct\":%u,\"age_ms\":%lu}",
-               r.machine, r.runS, r.stopS, r.alarmS, r.parts, r.speed, age);
+      snprintf(b, sizeof b, "{\"machine\":%d,%s\"run_s\":%u,\"stop_s\":%u,\"alarm_s\":%u,\"parts\":%u,\"speed_pct\":%u,\"age_ms\":%lu}",
+               r.machine, extra, r.runS, r.stopS, r.alarmS, r.parts, r.speed, age);
     else
-      snprintf(b, sizeof b, "{\"machine\":%d,\"event\":\"%s\",\"age_ms\":%lu}", r.machine, r.ev, age);
+      snprintf(b, sizeof b, "{\"machine\":%d,\"event\":\"%s\",%s\"age_ms\":%lu}", r.machine, r.ev, extra, age);
     if (!mqtt.publish(r.minute ? MQTT_MINUTES : MQTT_EVENTS, b)) return;   // try again next pass
     logHead = (logHead + 1) % LOG_SIZE;
     logCount--;
@@ -443,6 +549,19 @@ class ServerCallbacks : public BLEServerCallbacks {
   void onDisconnect(BLEServer*) override { bleConnected = false; bleRestartAdvertising = true; }
 };
 
+// text the page writes to NUS RX (e.g. "route 12-34"); it runs in the BLE task, so loop() picks it up
+char bleCmd[32];
+volatile bool bleCmdReady = false;
+class RxCallbacks : public BLECharacteristicCallbacks {
+  void onWrite(BLECharacteristic* c) override {
+    if (bleCmdReady) return;
+    String v = c->getValue();
+    strncpy(bleCmd, v.c_str(), sizeof bleCmd - 1);
+    bleCmd[sizeof bleCmd - 1] = '\0';
+    bleCmdReady = true;
+  }
+};
+
 void startBLE() {
   BLEDevice::init(BLE_NAME);
   BLEServer* srv = BLEDevice::createServer();
@@ -450,7 +569,8 @@ void startBLE() {
   BLEService* svc = srv->createService(NUS_SERVICE);
   txChar = svc->createCharacteristic(NUS_TX, BLECharacteristic::PROPERTY_NOTIFY);
   txChar->addDescriptor(new BLE2902());
-  svc->createCharacteristic(NUS_RX, BLECharacteristic::PROPERTY_WRITE | BLECharacteristic::PROPERTY_WRITE_NR);
+  BLECharacteristic* rx = svc->createCharacteristic(NUS_RX, BLECharacteristic::PROPERTY_WRITE | BLECharacteristic::PROPERTY_WRITE_NR);
+  rx->setCallbacks(new RxCallbacks());
   svc->start();
   BLEAdvertising* adv = BLEDevice::getAdvertising();
   adv->addServiceUUID(NUS_SERVICE);
@@ -466,6 +586,17 @@ void bleSendLine(const char* line, int len) {
     int k = min(20, len - i);
     txChar->setValue((uint8_t*)(line + i), k);
     txChar->notify();
+  }
+}
+
+// text lines typed into the Serial Monitor or sent by the page over USB
+void readSerialCommand() {
+  static char cmd[32];
+  static int len = 0;
+  while (Serial.available()) {
+    char c = Serial.read();
+    if (c == '\n' || c == '\r') { if (len) { cmd[len] = '\0'; handleCommand(cmd); len = 0; } }
+    else if (len < (int)sizeof cmd - 1) cmd[len++] = c;
   }
 }
 
@@ -486,6 +617,9 @@ void setup() {
   beginInput(rejIn, REJECT_PIN);
   analogReadResolution(12);
   if (HAVE_POTS) readPots();
+  prefs.begin("factory", false);
+  if (!setRoute(prefs.getString("route", "1234-").c_str(), false)) setRoute("1234-", false);
+  Serial.printf("# Route: %s\n", route);
   logEvent(0, "boot");                       // a restart shows in the database
 
   if (USE_WIFI) startWiFi();
@@ -509,6 +643,9 @@ void loop() {
   }
 
   if (readSwitches()) { pending = true; mqttPending = true; }
+  readSerialCommand();
+  if (bleCmdReady) { handleCommand(bleCmd); bleCmdReady = false; }
+  if (routeChanged) { routeChanged = false; pending = true; mqttPending = true; }
   if (HAVE_POTS && now - lastSample >= SAMPLE_MS) { lastSample = now; readPots(); }
 
   tallyMachines(now - lastTally);
@@ -520,7 +657,7 @@ void loop() {
   if ((pending && now - lastSend >= MIN_GAP_MS) || due) {
     lastSend = now;
     pending = false;
-    char line[256];
+    char line[384];
     int len = makeLine(line, sizeof(line) - 2);
     memcpy(lastLine, line, len + 1);
     Serial.println(line);                   // lines that start with "#" are notes, the pages skip them

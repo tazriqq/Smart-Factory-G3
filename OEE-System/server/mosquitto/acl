@@ -3,6 +3,8 @@
 user esp32
 topic readwrite group3/dpx/#
 
-# web: the website and Telegraf only listen, so nobody with this password can fake data
+# web: the website and Telegraf only listen, so nobody with this password can fake data;
+# the website may only set the products' routes (the board checks what it gets)
 user web
 topic read group3/dpx/#
+topic write group3/dpx/+/route/set
