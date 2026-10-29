@@ -166,6 +166,12 @@ services:
       SHEETS_EVENTS_ROWS: ${SHEETS_EVENTS_ROWS:-500}
       SHEETS_EVENTS_GAP_S: ${SHEETS_EVENTS_GAP_S:-10}
       SHEETS_MAX_ROWS: ${SHEETS_MAX_ROWS:-1000}
+      REPORT_AT: ${REPORT_AT:-23:55}                       # the daily report to LINE (Thailand time)
+      LINE_CHANNEL_TOKEN: ${LINE_CHANNEL_TOKEN:-}
+      LINE_TO: ${LINE_TO:-}
+      DASHBOARD_URL: ${DASHBOARD_URL:-}
+    volumes:
+      - sheets-state:/state                                # which day's report went out last
 
   telegraf:
     image: telegraf:1.32.3
@@ -220,6 +226,7 @@ services:
       INFLUX_BUCKET: ${INFLUX_BUCKET}
 
 volumes:
+  sheets-state:
   mosquitto-data:
   influxdb-data:
   influxdb-config:

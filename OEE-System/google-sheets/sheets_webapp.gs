@@ -13,8 +13,8 @@
 // the secret is kept in Script properties (not in this file), so this file can be shared
 const KEY = () => PropertiesService.getScriptProperties().getProperty('KEY');
 const TZ = 'Asia/Bangkok';
-const TAB_NAMES = ['Events', 'OEE_Daily', 'OEE_Hourly', 'Products', 'Machines'];
-const PERCENT = ['availability', 'performance', 'quality', 'oee'];   // columns shown as %
+const TAB_NAMES = ['Daily_Report', 'Events', 'OEE_Daily', 'OEE_Hourly', 'Products', 'Machines'];
+const PERCENT = ['availability', 'performance', 'quality', 'oee', 'best_oee', 'worst_oee', 'oee_vs_day_before'];   // columns shown as %
 
 const NOTES = [
   ['What the tabs mean (for people and for Claude)'],
@@ -24,6 +24,7 @@ const NOTES = [
   ['Products: one row per product per day: output = parts off the end of its route, good / reject = QC presses for it, quality = good / (good + reject).'],
   ['Columns: logged_min = minutes the board was on and logging, run_min = running (run switch on, no alarm, speed above 0 %), stop_min = not running (alarm_min of them under the line alarm / E-stop), parts = parts finished, ideal_cycle_s = fastest normal cycle time, good / reject = QC presses for that product.'],
   ['Availability = run / logged time. Performance = ideal_cycle_s x parts / run time. Quality = good / (good + reject) of the product the machine worked on, so it is the same for every machine on that route. OEE = A x P x Q. Empty = nothing to divide by.'],
+  ['Daily_Report (for managers): one row per line per day. status = final (a finished day) or today so far. oee = A x P x Q for the whole line: availability = run time / logged time, performance = standard time of the parts made / run time, quality = good / (good + reject). output / good / reject = parts off the line and their QC, run_h / stop_h = machine hours running / stopped, alarm_min and alarms = time under the E-stop and how many times, best / worst machine of the day, products = output per product (code, name), and the change from the day before. Counts the board only. The same report goes to LINE every day.'],
   ['Machines: names and ideal_cycle_s. To change them, change the machines table in the database (see README); every day is then recomputed.'],
 ];
 

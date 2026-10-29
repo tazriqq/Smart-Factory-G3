@@ -221,6 +221,7 @@ database ──► sheets-sync (บน server) ──HTTPS + SHEETS_KEY──►
 | **Events** | กดปุ่ม / สวิตช์ / ผลิตเสร็จ ล่าสุด · คอลัมน์ท้าย `source` = `board` หรือ `website` | ~10 วินาทีหลังมี event |
 | **OEE_Daily** / **OEE_Hourly** | OEE แต่ละเครื่อง (และ product) รายวัน / รายชั่วโมง | ทุก 15 นาที |
 | **Products** | output / good / reject / quality ของแต่ละ product รายวัน | ทุก 15 นาที |
+| **Daily_Report** | สรุปประจำวันสำหรับผู้บริหาร (ดูด้านล่าง) | ทุก 15 นาที + ตอน `REPORT_AT` |
 | **Machines** · **Notes** | ชื่อเครื่อง + `ideal_cycle_s` · คำอธิบายแต่ละแท็บ | ทุก 15 นาที |
 
 - **เวลา** ทุกแท็บเป็น `YYYY-MM-DD hh:mm:ss:ms` (เวลาไทย)
@@ -228,7 +229,19 @@ database ──► sheets-sync (บน server) ──HTTPS + SHEETS_KEY──►
 - **source = website:** การกดบนหน้า control ก็ขึ้นชีตด้วย (RUN / ฝา / Set / Alarm / GOOD / REJECT / Undo / Reset / เส้นทาง / Connect-Disconnect board) แต่ **OEE / Quality / Products คิดจากบอร์ดอย่างเดียว**
 - ชิ้นงานที่ตัวจำลองผลิตเสร็จไม่ขึ้นชีต เพราะเกิดในเบราว์เซอร์ ไม่ได้เกิดที่ server
 
-**ตั้งค่า (ครั้งแรก):**
+### รายงานสรุปประจำวัน (ผู้บริหาร) → Google Sheet + LINE
+- แท็บ **Daily_Report**: 1 แถวต่อวันต่อ line · `status` (final / today so far) · OEE ไลน์ + A · P · Q · output / good / reject · ชั่วโมงเดิน / หยุด · alarm (นาที, ครั้ง) · เครื่องดีสุด / ต่ำสุด · ผลผลิตแต่ละ product (รหัส, ชื่อ) · เทียบกับเมื่อวาน (คิดจากบอร์ดอย่างเดียว)
+- **ทุกวันเวลา `REPORT_AT`** (ค่าเริ่มต้น 23:55 เวลาไทย) ส่งสรุปของวันนั้นไป **LINE** · server ปิดอยู่ตอนนั้นจะส่งย้อนหลังเมื่อเปิดกลับมา
+- ดูข้อความก่อนส่ง: `docker compose exec sheets-sync python /sync.py report` (หรือ `report 2026-10-30`) · ส่งเดี๋ยวนี้: `… /sync.py report-send`
+
+**ตั้งค่า LINE** (LINE Notify ปิดบริการแล้ว ต้องใช้ LINE Messaging API, ฟรี):
+1. https://developers.line.biz/console → login ด้วย LINE → **Create a new provider** → **Create a Messaging API channel** (ระบบจะสร้าง LINE Official Account ให้)
+2. ในแท็บ **Messaging API** → **Channel access token (long-lived)** → **Issue** → คัดลอกไปใส่ `LINE_CHANNEL_TOKEN=` ใน `server/.env`
+3. สแกน QR ของบอทในแท็บเดียวกันด้วย LINE ในมือถือ → **เพิ่มเพื่อน** (ทุกคนที่จะรับรายงาน)
+4. ส่งให้ใคร: เว้น `LINE_TO=` ว่าง = ส่งให้เพื่อนของบอททุกคน · หรือใส่ user ID ของตัวเอง (แท็บ **Basic settings** → *Your user ID*, ขึ้นต้นด้วย `U`) คั่นหลายคนด้วย `,`
+5. `docker compose up -d sheets-sync` แล้วทดสอบ: `docker compose exec sheets-sync python /sync.py report-send`
+
+**ตั้งค่า Google Sheet (ครั้งแรก):**
 1. สร้าง Google Sheet → **Extensions → Apps Script** → วางทั้งไฟล์ `OEE-System/google-sheets/sheets_webapp.gs`
 2. **Project Settings → Script properties** → `KEY` = ค่าเดียวกับ `SHEETS_KEY`
 3. เลือกฟังก์ชัน **setup** → **Run** → อนุญาตสิทธิ์
