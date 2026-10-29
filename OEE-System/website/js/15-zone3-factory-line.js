@@ -1023,7 +1023,28 @@ setTimeout(() => {
 /* ---------- phone: live numbers instead of the 3D floor ----------
    On a narrow screen the floor is hidden (CSS) and these cards show the same numbers as the floor's tags
    and output panels, copied from them twice a second. The line keeps running underneath either way. */
-const phone = matchMedia('(max-width:760px)');
+// a phone: the browser says so, or a small touch screen without a mouse, or a narrow window. Tablets keep the 3D floor.
+// The Simple / 3D button in the header overrides it (kept in this browser).
+const VIEW_KEY = 'lf-view';
+const narrow = matchMedia('(max-width:760px)'), touchOnly = matchMedia('(pointer:coarse) and (hover:none)');
+const looksLikePhone = () => !!navigator.userAgentData?.mobile || /Android.+Mobile|iPhone|iPod|Windows Phone|Opera Mini/i.test(navigator.userAgent)
+  || (touchOnly.matches && Math.min(screen.width, screen.height) < 600) || narrow.matches;
+const viewChoice = () => { try { return localStorage.getItem(VIEW_KEY); } catch { return null; } };
+const phone = { get matches() { return document.body.classList.contains('phone'); } };
+const viewBtn = Object.assign(document.createElement('button'), { type: 'button', className: 'lb-btn view-toggle' });
+function applyView() {
+  const c = viewChoice(), on = c ? c === 'simple' : looksLikePhone();
+  document.body.classList.toggle('phone', on);
+  viewBtn.textContent = on ? '🧊 3D view' : '📱 Simple view';
+  viewBtn.title = on ? 'Show the 3D floor' : 'Numbers only, no 3D (lighter on a phone)';
+}
+viewBtn.addEventListener('click', () => {
+  try { localStorage.setItem(VIEW_KEY, document.body.classList.contains('phone') ? '3d' : 'simple'); } catch {}
+  applyView(); renderPhone();
+});
+document.querySelector('.dash-bar .lf-tabs, .dash-title')?.after(viewBtn);
+[narrow, touchOnly].forEach((m) => m.addEventListener('change', applyView));
+applyView();
 const mv = document.createElement('section');
 mv.className = 'm-view'; mv.setAttribute('aria-label', 'Line, live');
 mv.innerHTML = `<div class="mv-outs"></div><div class="mv-ms">${MACHINES.map((m, i) => `<div class="mv-card mv-m">
