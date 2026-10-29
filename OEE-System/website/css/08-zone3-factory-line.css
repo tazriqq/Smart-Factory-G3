@@ -434,3 +434,20 @@ body.phone .dash-title span{display:none}
 .lb-now .o-p{margin-right:0}
 .o-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:170px;display:inline-block;vertical-align:bottom}
 body.phone .lb-now{display:flex;width:100%;margin-top:4px}
+/* minimal dashboard: what matters only; settings live on the control page, details on the OEE Dashboard tab */
+.oee .oee-settings,.oee .oee-group,.oee .oee-parts,.oee .oee-chip{display:none!important}
+.lf-out,.lf-route{display:none!important}
+.dash-machine .iso-plate-corners{display:none!important}
+.line-bar .lb-stat:has([data-l="wip"]),.line-bar .lb-stat:has([data-l="time"]),.line-bar [data-l="covers"],.line-bar .lb-seg:has([data-z]){display:none!important}
+.lf-tag .tg-ctx,.lf-tag .tg-apq{display:none!important}
+.oee .oee-legend{display:flex;flex-wrap:nowrap;gap:10px;overflow:hidden;font-size:10px;white-space:nowrap}
+.oee .oee-legend span:nth-child(n+3){display:none}
+.oee-prods{display:grid;gap:6px;padding-top:6px;border-top:1px solid var(--anatomy-lo)}
+.op-row{display:grid;grid-template-columns:auto minmax(0,1fr) repeat(4,auto);align-items:center;gap:10px}
+.op-name{display:grid;color:var(--anatomy-strong);overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.op-name em{font-style:normal;color:var(--anatomy-muted);font-size:10px}
+.op-n{display:grid;text-align:right}
+.op-n small{color:var(--anatomy-muted);text-transform:uppercase;letter-spacing:.08em;font-size:9px}
+.op-n b{font-weight:500;font-size:16px;color:var(--anatomy-strong);font-variant-numeric:tabular-nums}
+.op-g b{color:var(--anatomy-green)}.op-r b{color:var(--anatomy-red)}
+.oee-shiftline{color:var(--anatomy-muted);font-size:10.5px}

@@ -197,6 +197,11 @@
   }
 
   // ───────── drawing ─────────
+  // one line under the title: the shift and the time frame in use (both are set on the control page)
+  const shiftLine = document.createElement("p");
+  shiftLine.className = "oee-shiftline";
+  q(".oee-head").after(shiftLine);
+  const WIN_NAME = { 15: "last 15 min", 60: "last 1 h", 240: "last 4 h", shift: "shift", custom: "custom" };
   const svg = q(".oee-bar");
   const msg = q(".oee-msg");
   let shownSvg = "";
@@ -211,6 +216,7 @@
     o("window").textContent = Number.isFinite(w0) && Number.isFinite(w1) ? `${hhmm(w0)} – ${hhmm(Math.min(w1, Math.max(w0, t)))}${w1 > t ? ` (to ${hhmm(w1)})` : ""}` : "";
     const st = settings();
     o("shiftsum").textContent = `${inp.start.value}–${inp.end.value} · work ${inp.work.value} h · break ${inp.bstart.value}, ${st.blen} min · cycle ${st.cycle} s · ${isDemo() ? "demo clock" : "real time"}`;
+    shiftLine.textContent = `Shift ${inp.start.value}–${inp.end.value} · break ${inp.bstart.value} (${st.blen} min) · time frame: ${WIN_NAME[win] || win} ${o("window").textContent}${isDemo() ? " · demo clock" : ""}`;
     o("clock").textContent = hhmmss(t);
     o("clock").dateTime = new Date(t).toISOString();
     const chip = o("state");
@@ -288,7 +294,20 @@
   setInterval(() => { sample(); render(); }, 250);
   setInterval(persist, 2000);
   addEventListener("pagehide", () => { dirty = true; persist(); });
-  window.oee = { measure: () => { const t = now(); const sh = shiftOf(t); const w = windowOf(t, sh); return measure(t, sh, w.w0, w.w1); }, log: () => log, now,
+  // the shift and time frame are set on the control page (kept by the server's control-hub) for every screen
+  const applySettings = (s) => {
+    if (!s) return;
+    let changed = false, clock = false;
+    for (const k of ["start", "work", "bstart", "blen", "cycle", "clock", "from", "to"])
+      if (s[k] !== undefined && inp[k] && String(inp[k].value) !== String(s[k])) { inp[k].value = s[k]; changed = true; if (k === "clock") clock = true; }
+    if (s.win && String(s.win) !== win) { win = String(s.win); changed = true; }
+    if (!changed) return;
+    fitEnd();
+    if (clock) { if (isDemo()) startDemo(); loadLog(); }
+    save(); render();
+  };
+  const clearRecord = () => { log = { segs: [], parts: [] }; if (isDemo()) startDemo(); else store.del(LOG); render(); };
+  window.oee = { applySettings, clear: clearRecord, measure: () => { const t = now(); const sh = shiftOf(t); const w = windowOf(t, sh); return measure(t, sh, w.w0, w.w1); }, log: () => log, now,
     frame: () => { const t = now(); const w = windowOf(t, shiftOf(t)); return { t, w0: w.w0, w1: w.w1, bad: w.bad, fixed: win === "shift" || win === "custom" }; } };
 })();
 })();

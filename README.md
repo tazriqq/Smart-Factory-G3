@@ -156,6 +156,7 @@ Windows `ipconfig` · Mac `ipconfig getifaddr en0` · Linux `hostname -I` แล
   - `Live · via board` = ไลน์ทำตามบอร์ดจริง
   - `Live · control via website` = ไลน์ทำตามตัวจำลองของหน้า control
 - แท็บ **Line** (ภาพ 3D ไลน์ผลิต) กับ **OEE Dashboard** (กราฟ / ตาราง OEE แต่ละเครื่อง) สลับได้ด้วยปุ่มบนหัวเว็บหรือกด `1` / `2`
+- **แบบ minimal:** แถบไลน์ (กำลังผลิต · ผลผลิต · throughput · bottleneck) · ภาพ 3D กับป้ายเครื่อง (ความเร็ว · cycle · OEE) · แผงขวา (กะ / time frame 1 บรรทัด · timeline · เวลาเดิน / หยุด · A · P · Q · OEE · ดี / เสียแยกตาม product) · การตั้งค่าทั้งหมดอยู่หน้า control ส่วนรายละเอียดอยู่แท็บ OEE Dashboard
 - **มือถือ:** ตรวจเองว่าเปิดจากมือถือ แล้วแสดงการ์ดข้อมูลสดแทนภาพ 3D ปุ่ม `📱 Simple view` / `🧊 3D view` บนหัวเว็บใช้สลับเองได้
 - กล่อง **Products** บนภาพไลน์แสดงเส้นทางผลิต (แก้ได้ที่หน้า control)
 - ต้องการช่องเชื่อมต่อแบบเดิม (Bluetooth / USB / Wi-Fi ตรงไปที่บอร์ด) ให้เปิด `…/?connect`
@@ -185,7 +186,11 @@ Windows `ipconfig` · Mac `ipconfig getifaddr en0` · Linux `hostname -I` แล
 - **ถ้าชนกัน คนที่คำสั่งถึง server ก่อนชนะ** คำสั่งที่มาทีหลังถูก ignore และขึ้น `ignored: someone else changed … first`
 - GOOD / REJECT / Undo / Reset นับทุกครั้ง
 
-### 4.4 ส่วนอื่นในหน้า
+### 4.4 Shift & time frame (ของแผง OEE ทุกจอ)
+- เวลาเริ่มกะ, ชั่วโมงทำงาน, เวลาพัก, ideal cycle, นาฬิกา (เวลาจริง / demo 1 วินาที = 1 นาที) และ time frame (15 นาที / 1 ชม. / 4 ชม. / ทั้งกะ / Custom) · ตั้งที่การ์ดนี้แล้วหน้า OEE ทุกจอเปลี่ยนตาม (เก็บที่ control-hub)
+- **Clear OEE record** (กด 2 ครั้ง) ล้างบันทึกของแผง OEE ทุกจอ
+
+### 4.5 ส่วนอื่นในหน้า
 - **รูปบอร์ด ESP32:** ลากเส้นจากแต่ละขาไปบอกว่าต่อกับอะไร กดแล้วเกิดอะไร บันทึก event อะไร พร้อมสถานะสด (บนมือถือแสดงเป็นตาราง)
 - **Wiring map**, **Events** (เวลาแบบ `2026-10-30 14:05:09:123`) และ **Raw lines**
 

@@ -315,6 +315,8 @@ let lastControl = null, controlAt = 0, controlSrc = null;
 function followControl(m) {
   controlSrc = m.src === "sim" || m.src === "board" ? m.src : null;
   if (m.items) window.__line?.setItems?.(m.items, m.line);   // what is being made, whichever source drives the line
+  if (m.shift) window.oee?.applySettings?.(m.shift);          // the shift and time frame, set on the control page
+  if (lastControl && lastControl.id === m.id && (m.clear >>> 0) > (lastControl.clear >>> 0)) window.oee?.clear?.();
   if (controlSrc === "board") { lastControl = m; return; }
   if (controlSrc === "sim" && window.__board.live) window.__board.stop();   // let go of the board at once
   if (window.__board.live || !Array.isArray(m.pot) || !Array.isArray(m.run)) return;   // the board wins

@@ -43,7 +43,7 @@ BASE = os.environ.get("LINE_TOPIC", "group3/dpx/line1")
 LINE_ID = os.environ.get("LINE_ID", BASE.rsplit("/", 1)[-1])
 T_STATE, T_SET, T_BOARD = BASE + "/control", BASE + "/control/set", BASE + "/board"
 T_PAIR, T_EVENTS = BASE + "/control/pair", BASE + "/events"
-PRESS_EVENT = {"good": "good", "rej": "reject", "undo": "undo", "reset": "reset"}
+PRESS_EVENT = {"good": "good", "rej": "reject", "undo": "undo", "reset": "reset", "clear": "oee_clear"}
 SWITCH_EVENT = {"run": ("run_on", "run_off"), "door": ("door_open", "door_close"), "setup": ("setup_on", "setup_off")}
 outbox = []   # event rows to post (on_command runs inside the MQTT callback)
 WEB_USER, WEB_PASS = "web", os.environ.get("MQTT_WEB_PASS", "")
@@ -61,6 +61,9 @@ state = {
     "good": 0, "rej": 0, "undo": 0, "reset": 0,
     "items": {"A": {"code": "", "name": ""}, "B": {"code": "", "name": ""}}, "line": LINE_ID,
     "qc": {"A": {"good": 0, "rej": 0}, "B": {"good": 0, "rej": 0}},   # QC presses per product (good / rej = all)
+    # the OEE panel of every dashboard: shift, ideal cycle, clock (demo = 1 s is 1 min), time frame; clear = counter
+    "shift": {"start": "08:00", "work": 8, "bstart": "12:00", "blen": 60, "cycle": 120, "clock": "demo",
+              "win": "shift", "from": "08:00", "to": "17:00"}, "clear": 0,
     "id": "".join(random.choices(string.ascii_lowercase + string.digits, k=8)),
 }
 ver = {"n": 0, "kv": {}, "by": {}}   # version counter, version and author of each value
@@ -69,8 +72,24 @@ restored = False
 dirty = True
 
 
+def valid_shift(field, value):
+    if field in ("start", "bstart", "from", "to"):
+        ok = isinstance(value, str) and len(value) == 5 and value[2] == ":" and value[:2].isdigit() and value[3:].isdigit()
+        return value if ok and int(value[:2]) < 24 and int(value[3:]) < 60 else None
+    if field == "clock":
+        return value if value in ("demo", "real") else None
+    if field == "win":
+        return value if value in ("15", "60", "240", "shift", "custom") else None
+    if not isinstance(value, (int, float)):
+        return None
+    lo, hi = {"work": (1, 16), "blen": (0, 480), "cycle": (1, 36000)}.get(field, (None, None))
+    return (value if field == "work" else int(value)) if lo is not None and lo <= value <= hi else None
+
+
 def valid(key, value):
     """the value a key may take, or None"""
+    if key.startswith("shift."):
+        return valid_shift(key[6:], value)
     if key.startswith("item."):
         _, p, field = (key.split(".") + ["", ""])[:3]
         if p not in ("A", "B") or field not in ("code", "name") or not isinstance(value, str):
@@ -96,6 +115,9 @@ def valid(key, value):
 
 
 def put(key, value):
+    if key.startswith("shift."):
+        state["shift"][key[6:]] = value
+        return
     if key.startswith("item."):
         _, p, field = key.split(".")
         state["items"][p][field] = value
@@ -119,7 +141,7 @@ def on_command(m):
             state[k] += 1
             outbox.append({"machine": 0, "event": PRESS_EVENT[k], "product": p})
             dirty = True
-        elif k in ("good", "rej", "undo", "reset") and not p:
+        elif k in ("good", "rej", "undo", "reset", "clear") and not p:
             state[k] += 1
             outbox.append({"machine": 0, "event": PRESS_EVENT[k]})
             dirty = True
@@ -142,6 +164,8 @@ def on_command(m):
     if name == "item":
         p, field = idx.split(".")
         before = state["items"][p][field]
+    elif name == "shift":
+        before = state["shift"][idx]
     else:
         before = state[name][int(idx)] if name in ("pot", "run", "door", "setup") else state["sim"][idx] if name == "sim" else state[key]
     put(key, value)
@@ -252,6 +276,12 @@ def on_message(client, _userdata, msg):
                 state[k] = m[k]
         if isinstance(m.get("sim"), dict):
             state["sim"].update({k: v for k, v in m["sim"].items() if valid("sim." + k, v) is not None})
+        if isinstance(m.get("shift"), dict):
+            for f, v in m["shift"].items():
+                if f in state["shift"] and valid_shift(f, v) is not None:
+                    state["shift"][f] = valid_shift(f, v)
+        if isinstance(m.get("clear"), int):
+            state["clear"] = m["clear"]
         if isinstance(m.get("qc"), dict):
             for p in ("A", "B"):
                 for k in ("good", "rej"):

@@ -137,6 +137,12 @@ body:not([data-mode="monitor"]) .mon{display:none!important}
 .rt-item .it-code{width:110px}.rt-item .it-name{flex:1 1 200px}
 @media (max-width:620px){.rt-item{margin-left:0}}
 #rt-msg{font:12px var(--mono);color:var(--muted)}
+/* shift & time frame */
+.sh-form{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:flex-end;margin-top:10px}
+.sh-form label{display:grid;gap:4px;font:500 10.5px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.sh-form input,.sh-form select{width:auto;min-width:96px}
+.sh-form input[type=number]{width:90px}
+#sh-sum{font:12px var(--mono);color:var(--muted);margin-top:8px}
 /* simulation */
 .sim{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px}
 .seg{display:inline-flex}.seg .btn{border-radius:0}.seg .btn:first-child{border-radius:7px 0 0 7px}.seg .btn:last-child{border-radius:0 7px 7px 0}
@@ -320,6 +326,25 @@ main>*{min-width:0}
     <div class="card rej"><div class="k">QC · Reject · รวม</div><div class="count"><b id="q-rej">—</b><span>presses</span></div>
       <div class="pins">บอร์ด: GPIO 4 · นับให้ product ที่มีชิ้นงานออกล่าสุด</div></div>
     <div class="card"><div class="k">All parts · line</div><div class="count"><b id="q-all">—</b><span class="mon">finished by 4 machines</span><span class="ctl">made on the dashboard</span></div><div class="pins" id="q-yield">yield —</div></div>
+  </section>
+
+  <section class="card" aria-label="Shift and time frame">
+    <div class="log-h"><span class="k">Shift & time frame · แผง OEE ของทุกจอใช้ค่านี้</span><span class="grow"></span><button class="btn" id="oee-clear" type="button">Clear OEE record</button></div>
+    <div class="sh-form">
+      <label>Shift start<input class="in" type="time" data-s="start"></label>
+      <label>Work, h<input class="in" type="number" min="1" max="16" step="0.5" data-s="work"></label>
+      <label>Shift end<input class="in" type="time" data-s="end" readonly title="start + work hours + break"></label>
+      <label>Break start<input class="in" type="time" data-s="bstart"></label>
+      <label>Break, min<input class="in" type="number" min="0" max="480" step="5" data-s="blen"></label>
+      <label>Ideal cycle, s<input class="in" type="number" min="1" max="36000" step="1" data-s="cycle"></label>
+      <label>Clock<select class="in" data-s="clock"><option value="real">Real time</option><option value="demo">Demo · 1 s = 1 min</option></select></label>
+    </div>
+    <div class="sh-form">
+      <label>Time frame<span class="seg" role="radiogroup" aria-label="Time frame"><button class="btn" type="button" data-win="15">15 min</button><button class="btn" type="button" data-win="60">1 h</button><button class="btn" type="button" data-win="240">4 h</button><button class="btn" type="button" data-win="shift">Shift</button><button class="btn" type="button" data-win="custom">Custom</button></span></label>
+      <label>From<input class="in" type="time" data-s="from"></label>
+      <label>To<input class="in" type="time" data-s="to"></label>
+    </div>
+    <div id="sh-sum"></div>
   </section>
 
   <section class="card qcp" aria-label="QC per product">
@@ -515,12 +540,15 @@ const ME = Math.random().toString(36).slice(2, 10);
 const ctl = { pot: [512, 512, 512, 512], run: [1, 1, 1, 1], door: [0, 0, 0, 0], al: 0, good: 0, rej: 0, undo: 0, reset: 0,
   setup: [0, 0, 0, 0], sim: { run: 1, speed: 4 }, route: "1234-", useBoard: 1,
   items: { A: { code: "", name: "" }, B: { code: "", name: "" } },
-  qc: { A: { good: 0, rej: 0 }, B: { good: 0, rej: 0 } } };   // what this page shows
+  qc: { A: { good: 0, rej: 0 }, B: { good: 0, rej: 0 } },
+  shift: { start: "08:00", work: 8, bstart: "12:00", blen: 60, cycle: 120, clock: "demo", win: "shift", from: "08:00", to: "17:00" },
+  clear: 0 };   // what this page shows
 let S = null, dragging = -1, sendTimer = 0;   // S: the hub's state as last received
 const sent = {};                              // values sent but not yet back from the hub
 const KEYS = () => [0, 1, 2, 3].flatMap((i) => ["pot", "run", "door", "setup"].map((k) => [`${k}.${i}`, ctl[k][i], S[k][i]]))
   .concat([["al", ctl.al, S.al], ["useBoard", ctl.useBoard, S.useBoard], ["route", ctl.route, S.route], ["sim.run", ctl.sim.run, S.sim.run], ["sim.speed", ctl.sim.speed, S.sim.speed]])
-  .concat(["A", "B"].flatMap((p) => ["code", "name"].map((f) => [`item.${p}.${f}`, ctl.items[p][f], ((S.items || {})[p] || {})[f] ?? ""])));
+  .concat(["A", "B"].flatMap((p) => ["code", "name"].map((f) => [`item.${p}.${f}`, ctl.items[p][f], ((S.items || {})[p] || {})[f] ?? ""])))
+  .concat(Object.keys(ctl.shift).map((f) => [`shift.${f}`, ctl.shift[f], (S.shift || {})[f]]));
 function command(m) {
   if (!client || !client.connected) return;
   const text = JSON.stringify({ ...m, by: ME });
@@ -577,6 +605,11 @@ function onState(text) {
     if (document.activeElement !== box) ctl.items[p][f] = ((m.items || {})[p] || {})[f] || "";
   }
   if (m.line) $("rt-line").textContent = m.line;
+  if (m.shift) {
+    if (S && S.shift && JSON.stringify(S.shift) !== JSON.stringify(m.shift) && m.last && m.last.by !== ME && m.last.ok) event("shift / time frame changed · from another device", "n");
+    for (const f in m.shift) { const box = document.querySelector(`.sh-form [data-s="${f}"]`); if (document.activeElement !== box) ctl.shift[f] = m.shift[f]; }
+    renderShift();
+  }
   if (m.qc) {
     if (S && S.qc) for (const P of ["A", "B"]) for (const [k, t, c] of [["good", "QC good", "g"], ["rej", "QC reject", "r"]])
       if ((m.qc[P] || {})[k] > ctl.qc[P][k]) event(`${t} · product ${P} · from another device`, c);
@@ -613,6 +646,39 @@ cards.forEach((c, i) => {
   c.slider.addEventListener("change", () => { dragging = -1; event(`M${i + 1} speed ${c.slider.value} %`, "n"); });
 });
 $("al-btn").addEventListener("click", () => { ctl.al = ctl.al ? 0 : 1; sendCtl(ctl.al ? "ALARM ON" : "alarm cleared", ctl.al ? "r" : "g"); });
+// shift & time frame: every dashboard's OEE panel follows these (the hub keeps them)
+const toMin = (v) => { const m = /^(\d{2}):(\d{2})$/.exec(v || ""); return m ? +m[1] * 60 + +m[2] : NaN; };
+const hm = (n) => String(Math.floor(n / 60) % 24).padStart(2, "0") + ":" + String(n % 60).padStart(2, "0");
+function renderShift() {
+  const sh = ctl.shift, end = toMin(sh.start) + Math.round(sh.work * 60) + (sh.blen || 0);
+  document.querySelectorAll(".sh-form [data-s]").forEach((box) => {
+    const f = box.dataset.s, v = f === "end" ? (Number.isFinite(end) ? hm(Math.min(end, 1439)) : "") : sh[f];
+    if (document.activeElement !== box && String(box.value) !== String(v)) box.value = v;
+  });
+  document.querySelectorAll(".sh-form [data-win]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.win === sh.win)));
+  $("sh-sum").textContent = `กะ ${sh.start}–${Number.isFinite(end) ? hm(Math.min(end, 1439)) : "?"} · พัก ${sh.bstart} (${sh.blen} นาที) · ideal cycle ${sh.cycle} s · ${sh.clock === "demo" ? "demo clock (1 วินาที = 1 นาที)" : "เวลาจริง"} · time frame: ${{ 15: "15 นาทีล่าสุด", 60: "1 ชม. ล่าสุด", 240: "4 ชม. ล่าสุด", shift: "ทั้งกะ", custom: sh.from + "–" + sh.to }[sh.win]}`;
+}
+document.querySelectorAll(".sh-form [data-s]").forEach((box) => {
+  const f = box.dataset.s;
+  if (f === "end") return;
+  box.addEventListener("change", () => {
+    const v = box.type === "number" ? Number(box.value) : box.value;
+    if (box.type === "number" && !Number.isFinite(v)) return renderShift();
+    ctl.shift[f] = v;
+    if (f === "from" || f === "to") ctl.shift.win = "custom";
+    renderShift(); sendCtl(`shift ${f} → ${v}`, "n");
+  });
+});
+document.querySelectorAll(".sh-form [data-win]").forEach((b) => b.addEventListener("click", () => { ctl.shift.win = b.dataset.win; renderShift(); sendCtl(`time frame → ${b.textContent}`, "n"); }));
+// clear the OEE record of every dashboard (asks twice)
+$("oee-clear").addEventListener("click", (e) => {
+  const b = e.currentTarget;
+  if (!b.hasAttribute("data-armed")) { b.setAttribute("data-armed", ""); b.textContent = "Click again to clear"; setTimeout(() => { b.removeAttribute("data-armed"); b.textContent = "Clear OEE record"; }, 3000); return; }
+  b.removeAttribute("data-armed"); b.textContent = "Clear OEE record";
+  press("clear"); sendCtl("OEE record cleared on every dashboard", "r");
+});
+renderShift();
+
 // QC per product: a GOOD / REJECT pair for each product that has machines on its route
 $("qcp-rows").innerHTML = ["A", "B"].map((P) => `<div class="qcp-row" data-p="${P}">
   <span class="who"><i class="rp${P === "B" ? " b" : ""}">${P}</i><b data-q="name"></b><em data-q="route"></em></span>

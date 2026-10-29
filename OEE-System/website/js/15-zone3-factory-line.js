@@ -552,7 +552,9 @@ for (const k of ['url', 'key', 'min', 'line', 'sheet']) {
 }
 ntSum();
 // text/plain + no-cors: no preflight, the reply can't be read (check the sheet / LINE instead)
+// the old notify (LINE Notify through an Apps Script that is gone) is off: the server sends the daily report
 function ntPost(body) {
+  return;
   if (!nt.url) return;
   fetch(nt.url, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ ...body, key: nt.key }) }).catch(() => {});
 }
@@ -1031,6 +1033,21 @@ fit(false);
 setTimeout(() => {
   document.querySelectorAll('.lf-slot [data-toggle][aria-pressed="true"]').forEach((b) => b.click());
 }, 400);
+/* ---------- OEE panel: output and QC per product (the floor's output panels are hidden) ---------- */
+const prodBox = document.createElement('div');
+prodBox.className = 'oee-prods';
+document.querySelector('.dash-oee .oee-kpis')?.after(prodBox);
+setInterval(() => {
+  const html = ROUTE.map((ms, p) => {
+    if (!ms.length) return '';
+    const q = qcOf(p), all = q.good + q.rej;
+    return `<div class="op-row"><span class="o-p" data-p="${p}">${PRODUCTS[p]}</span><span class="op-name">${itemText(p) || 'product ' + PRODUCTS[p]}<em>${ms.map((i) => MACHINES[i].no).join('→')}</em></span>
+      <span class="op-n"><small>output</small><b>${fin[p]}</b></span><span class="op-n op-g"><small>good</small><b>${q.good}</b></span>
+      <span class="op-n op-r"><small>scrap</small><b>${q.rej}</b></span><span class="op-n"><small>yield</small><b>${all ? Math.round((q.good / all) * 100) + '%' : '—'}</b></span></div>`;
+  }).join('');
+  if (prodBox.innerHTML !== html) prodBox.innerHTML = html;
+}, 500);
+
 /* ---------- phone: live numbers instead of the 3D floor ----------
    On a narrow screen the floor is hidden (CSS) and these cards show the same numbers as the floor's tags
    and output panels, copied from them twice a second. The line keeps running underneath either way. */
