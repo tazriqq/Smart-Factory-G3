@@ -123,7 +123,7 @@ cp .env.example .env          # Windows PowerShell: copy .env.example .env
 ### 1.3 เปิดระบบ
 ```bash
 docker compose up -d --build      # ครั้งแรกโหลด image ราว 1–2 GB
-docker compose ps                 # ต้องขึ้นครบ 8 ตัว: mosquitto web timescaledb influxdb telegraf grafana sheets-sync control-hub
+docker compose ps                 # ต้องขึ้นครบ 9 ตัว: mosquitto web timescaledb influxdb telegraf grafana sheets-sync control-hub backup
 ```
 
 ### 1.4 หา IP ของเครื่อง server
@@ -287,8 +287,11 @@ docker compose exec timescaledb psql -U factory_admin -d factory -c "SELECT max(
 ```
 ถ้า `esp32/` เปลี่ยน ให้อัปโหลดโค้ดบอร์ดใหม่ · ถ้า `google-sheets/` เปลี่ยน ให้อัปเดต Apps Script
 
-**สำรองข้อมูล:** `docker compose exec -T timescaledb pg_dump -U factory_admin -Fc factory > factory.dump`
-(ย้ายไปเครื่องใหม่: ดูขั้นตอน restore ใน [`OEE-System/README.md`](OEE-System/README.md))
+**สำรองข้อมูลอัตโนมัติ:** service `backup` ทำ `server/backups/factory-YYYY-MM-DD.dump` ทุกวัน (ตอนเปิดและทุก 24 ชั่วโมง) เก็บย้อนหลัง `BACKUP_KEEP_DAYS` วัน (ค่าเริ่มต้น 14) · **คัดลอกโฟลเดอร์นี้และไฟล์ `.env` ไปเก็บนอกเครื่องเป็นระยะ** (ไม่อยู่ใน GitHub) · สำรองเองทันที: `docker compose exec -T timescaledb pg_dump -U factory_admin -Fc factory > factory.dump` · restore บนเครื่องใหม่: ดู [`OEE-System/README.md`](OEE-System/README.md)
+
+**ตัวเฝ้าระวัง Telegraf:** `telegraf/watchdog.sh` รีสตาร์ต Telegraf เองเมื่อบอร์ดออนไลน์แต่ข้อมูลไม่เข้าเกิน `WATCHDOG_STALL_S` วินาที (ค่าเริ่มต้น 180) · ดู: `docker compose logs telegraf | grep watchdog`
+
+**พอร์ตที่เปิดให้เครื่องอื่น:** 1883 (บอร์ด), 8080 (เว็บ), 3000 (Grafana), 5432 (PostgreSQL สำหรับ Claude Desktop จากเครื่องอื่น) · 9001 (MQTT WebSocket) และ InfluxDB เปิดเฉพาะบนเครื่อง server · หน้าเว็บต่อ MQTT ผ่าน nginx ที่ `/mqtt` / `/mqtt-view`
 
 ---
 
@@ -296,7 +299,9 @@ docker compose exec timescaledb psql -U factory_admin -d factory -c "SELECT max(
 
 | อาการ | สาเหตุที่พบบ่อย | แก้ |
 |---|---|---|
-| ข้อมูลบอร์ดไม่เข้า database / ไม่ขึ้นชีต ทั้งที่บอร์ดออนไลน์ | Telegraf หลุดจาก MQTT (หลังสร้าง Mosquitto ใหม่) | `docker compose restart telegraf` |
+| ข้อมูลบอร์ดไม่เข้า database / ไม่ขึ้นชีต ทั้งที่บอร์ดออนไลน์ | Telegraf หลุดจาก MQTT (หลังสร้าง Mosquitto ใหม่) | watchdog แก้เองภายใน ~3–4 นาที · หรือ `docker compose restart telegraf` |
+| หน้า control / OEE บนเครื่องอื่นต่อ MQTT ไม่ได้ | ยังจำที่อยู่เก่า `…:9001` (ปิดแล้ว) | เปิดหน้าใหม่ (ย้ายไป `/mqtt` ให้เอง) หรือแก้ช่อง broker เป็น `ws://<SERVER_IP>:8080/mqtt` |
+| อยากได้ข้อมูลเมื่อวานคืน | — | `server/backups/factory-YYYY-MM-DD.dump` |
 | หน้า OEE ไม่เปลี่ยนตามหน้า control | หน้า control เครื่องนั้นยังไม่ login / ยังเป็นหน้าเวอร์ชันเก่า | login หรือใช้ Share login · ปิดแท็บแล้วเปิดใหม่ |
 | แก้หน้าเว็บแล้วผ่าน Cloudflare ยังเป็นของเก่า | Cloudflare cache | ตั้ง Cache Rule *Bypass cache* · กด Ctrl+Shift+R |
 | `https://…` ขึ้น 502 / 1033 | tunnel / URL ผิด | Service URL ต้องเป็น `http://localhost:8080` (หรือ `http://web:80`) แบบ HTTP |

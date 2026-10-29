@@ -697,7 +697,7 @@ async function usePairCode(code) {
     remember.set("cnc-mqtt-user", j.u || "web"); remember.set("cnc-mqtt-pass", j.p);
     try { localStorage.removeItem("cnc-mqtt-url"); } catch {}
     $("user").value = j.u || "web"; $("pass").value = j.p;
-    $("url").value = location.protocol === "https:" ? `wss://${location.host}/mqtt` : `ws://${location.hostname}:9001`;
+    $("url").value = BROKER;
     return true;
   } catch { pill("err", "can't reach the server to check the code"); return false; }
 }
@@ -716,7 +716,11 @@ const pairFromLink = (() => {
   } catch {}
   history.replaceState(null, "", location.pathname + location.search);
 })();
-$("url").value = remember.get("cnc-mqtt-url") || (location.protocol === "https:" ? `wss://${location.host}/mqtt` : `ws://${location.hostname || "192.168.1.107"}:9001`);
+// the broker through nginx, the same address as this page (port 9001 itself is open on the server only).
+// An address remembered from before, on port 9001 of another computer, moves to this one.
+const BROKER = (location.protocol === "https:" ? "wss://" : "ws://") + (location.host || "192.168.1.107:8080") + "/mqtt";
+const savedBroker = remember.get("cnc-mqtt-url");
+$("url").value = savedBroker && !(/:9001\b/.test(savedBroker) && !/^wss?:\/\/(127\.0\.0\.1|localhost):/.test(savedBroker)) ? savedBroker : BROKER;
 $("user").value = remember.get("cnc-mqtt-user") || "web";
 $("pass").value = remember.get("cnc-mqtt-pass") || "";
 function loadMqtt() {

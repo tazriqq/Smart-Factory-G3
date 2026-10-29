@@ -9,3 +9,6 @@ __MACOSX/
 build/
 *.bin
 *.elf
+
+# database backups (server/backups): they hold all the data
+OEE-System/server/backups/

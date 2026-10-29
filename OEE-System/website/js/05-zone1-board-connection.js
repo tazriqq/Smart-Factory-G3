@@ -138,7 +138,10 @@ if (viewOnly) document.body.classList.add("view-only");
 if (remember.get("cnc-knob-source") in NAMES) sourceSel.value = remember.get("cnc-knob-source");
 // default broker: Mosquitto on the server that serves this page (or the server computer when opened as a file);
 // over https (the Cloudflare tunnel) nginx passes /mqtt on to it
-mqttUrl.value = remember.get("cnc-mqtt-url") || (location.protocol === "https:" ? `wss://${location.host}/mqtt` : `ws://${location.hostname || "192.168.1.107"}:9001`);
+// (port 9001 itself is open on the server only: an address remembered on 9001 of another computer moves to /mqtt)
+const savedBroker = remember.get("cnc-mqtt-url");
+mqttUrl.value = savedBroker && !(/:9001\b/.test(savedBroker) && !/^wss?:\/\/(127\.0\.0\.1|localhost):/.test(savedBroker)) ? savedBroker
+  : (location.protocol === "https:" ? "wss://" : "ws://") + (location.host || "192.168.1.107:8080") + "/mqtt";
 if (remember.get("cnc-mqtt-topic")) mqttTopic.value = remember.get("cnc-mqtt-topic");
 if (remember.get("cnc-mqtt-user")) mqttUser.value = remember.get("cnc-mqtt-user");
 if (remember.get("cnc-mqtt-pass")) mqttPass.value = remember.get("cnc-mqtt-pass");

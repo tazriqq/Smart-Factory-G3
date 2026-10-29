@@ -3,7 +3,7 @@
 ```
                     เครื่อง server (คอม / Raspberry Pi ที่เปิดทิ้งไว้) ── docker compose
                     ┌──────────────────────────────────────────────────────────────────────┐
-ESP32 ──MQTT:1883──►│ Mosquitto ──┬──ws:9001──► หน้าเว็บ (เปิดจาก http://<server>:8080)          │
+ESP32 ──MQTT:1883──►│ Mosquitto ──┬──ws (nginx /mqtt)──► หน้าเว็บ (http://<server>:8080) │
                     │             └──► Telegraf ──┬──► PostgreSQL/TimescaleDB :5432 ◄── Claude (MCP) │  ← ที่เก็บหลัก
                     │                             └──► InfluxDB ──► Grafana :3000              │
                     │  sheets-sync: ทุก 15 นาที อ่านสรุป OEE จาก PostgreSQL ──HTTPS──┐            │
@@ -73,7 +73,7 @@ OEE-System/
 | หน้าเว็บ OEE / control | `http://192.168.1.107:8080` · `/control.html` | OEE ไม่ต้อง login · control: MQTT user `web` + `MQTT_WEB_PASS` |
 | Grafana | `http://192.168.1.107:3000` | `GRAFANA_ADMIN_USER` / `GRAFANA_ADMIN_PASSWORD` ใน `.env` |
 | MQTT (ESP32) | `192.168.1.107:1883` | user `esp32` + `MQTT_ESP32_PASS` |
-| MQTT WebSocket | `ws://192.168.1.107:9001` | user `web` |
+| MQTT WebSocket | `ws://192.168.1.107:8080/mqtt` (nginx → Mosquitto 9001, ซึ่งเปิดเฉพาะบนเครื่อง server) | user `web` |
 | PostgreSQL | `192.168.1.107:5432` database `factory` | `reader` + `PG_READER_PASS` (อ่านอย่างเดียว) · `factory_admin` + `PG_ADMIN_PASSWORD` (แก้ได้ทุกอย่าง) |
 
 **ผู้ใช้ MQTT** (สร้างจาก `.env` ทุกครั้งที่เปิด, สิทธิ์ใน `server/mosquitto/acl`)

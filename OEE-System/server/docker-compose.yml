@@ -13,8 +13,8 @@ services:
     image: eclipse-mosquitto:2.0.20
     restart: unless-stopped
     ports:
-      - "${MQTT_PORT:-1883}:1883"
-      - "${MQTT_WS_PORT:-9001}:9001"
+      - "${MQTT_PORT:-1883}:1883"                  # the board
+      - "127.0.0.1:${MQTT_WS_PORT:-9001}:9001"     # WebSocket: on this computer only; pages go through nginx (/mqtt)
     volumes:
       - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
       - ./mosquitto/acl:/mosquitto/config/acl:ro
@@ -69,7 +69,7 @@ services:
     image: influxdb:2.7.10
     restart: unless-stopped
     ports:
-      - "${INFLUX_PORT:-8086}:8086"
+      - "127.0.0.1:${INFLUX_PORT:-8086}:8086"      # on this computer only; Grafana reaches it inside Docker
     volumes:
       - influxdb-data:/var/lib/influxdb2
       - influxdb-config:/etc/influxdb2
@@ -112,6 +112,34 @@ services:
       retries: 12
 
   # every SHEETS_EVERY_MIN minutes: OEE summary from the database -> Google Sheet
+  # a copy of the database every day in ./backups (kept BACKUP_KEEP_DAYS days); restore: see OEE-System/README.md
+  backup:
+    image: timescale/timescaledb:2.17.2-pg16
+    restart: unless-stopped
+    user: "${BACKUP_UID:-1000}:${BACKUP_GID:-1000}"   # the files belong to you, not to root
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    environment:
+      PGHOST: timescaledb
+      PGUSER: ${PG_ADMIN_USER}
+      PGPASSWORD: ${PG_ADMIN_PASSWORD}
+      PGDATABASE: ${PG_DB}
+      KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
+      TZ: Asia/Bangkok
+    volumes:
+      - ./backups:/backups
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        while true; do
+          f=/backups/factory-$$(date +%Y-%m-%d).dump
+          if pg_dump -Fc -f "$$f.part" 2>/tmp/err; then mv "$$f.part" "$$f"; echo "backup: $$f ($$(du -h "$$f" | cut -f1))"
+          else echo "backup: failed: $$(grep -v 'circular\|hypertable\|chunk\|continuous_agg\|hint' /tmp/err | head -3)"; rm -f "$$f.part"; fi
+          find /backups -name 'factory-*.dump' -mtime +$$KEEP_DAYS -delete
+          sleep 86400
+        done
+
   # the one copy of the control page's state: takes the pages' commands in order, first one wins
   control-hub:
     build: ./control-hub
@@ -150,9 +178,13 @@ services:
       mosquitto:
         condition: service_started
         restart: true   # Telegraf doesn't always get back on after the broker restarts: restart it too
+    # watchdog.sh runs Telegraf and restarts it when board data stops arriving while the board is online
+    entrypoint: ["/bin/bash", "/etc/telegraf/watchdog.sh"]
     volumes:
       - ./telegraf/telegraf.conf:/etc/telegraf/telegraf.conf:ro
+      - ./telegraf/watchdog.sh:/etc/telegraf/watchdog.sh:ro
     environment:
+      WATCHDOG_STALL_S: ${WATCHDOG_STALL_S:-180}
       MQTT_SERVER: ${MQTT_SERVER}
       MQTT_USER: ${MQTT_USER}
       MQTT_PASS: ${MQTT_PASS}
