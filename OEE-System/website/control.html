@@ -148,6 +148,21 @@ input[type=range]{width:100%;margin:6px 0;accent-color:var(--strong)}
 .events .g{color:var(--green)}.events .r{color:var(--red)}.events .b{color:var(--blue)}.events .n{color:var(--muted)}
 .raw{white-space:pre;color:var(--muted)}
 .empty{color:var(--muted)}
+
+/* what each button does, and the wiring map */
+.tw{overflow-x:auto;margin-top:10px}
+.acts{width:100%;border-collapse:collapse;font-size:13px;min-width:720px}
+.acts th{text-align:left;font:500 10.5px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);padding:6px 10px;border-bottom:1px solid var(--line)}
+.acts td{padding:8px 10px;border-bottom:1px solid var(--faint);vertical-align:top}
+.acts td:first-child{font:600 12.5px var(--mono);color:var(--strong);white-space:nowrap}
+.acts td.pin{font:12px var(--mono);color:var(--muted);white-space:nowrap}
+.acts code{font:11.5px var(--mono);color:var(--blue)}
+.acts .sec td{font:500 10.5px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);background:var(--faint);padding:5px 10px}
+.wiring summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px}
+.wiring summary::after{content:"▾";margin-left:auto;color:var(--muted);transition:transform .15s}
+.wiring[open] summary::after{transform:rotate(180deg)}
+.wiring iframe{display:block;width:100%;height:900px;border:0;border-radius:7px;margin-top:10px;background:var(--page)}
+.wiring a{font:12px var(--mono);color:var(--blue)}
 </style>
 </head>
 <body data-mode="off">
@@ -214,6 +229,40 @@ input[type=range]{width:100%;margin:6px 0;accent-color:var(--strong)}
       <button class="btn ctl" id="q-rej-btn" type="button">✕ REJECT</button><div class="pins">GPIO 4 · tactile</div></div>
     <div class="card"><div class="k">All parts · line</div><div class="count"><b id="q-all">—</b><span class="mon">finished by 4 machines</span><span class="ctl">made on the dashboard</span></div><div class="pins" id="q-yield">yield —</div></div>
   </section>
+
+  <section class="card" aria-label="What each button does">
+    <div class="k">ปุ่มแต่ละอันทำอะไร</div>
+    <p class="hint">ปุ่มบนบอร์ดใช้ตอน ESP32 online · ปุ่มบนหน้านี้ใช้ตอน ESP32 offline (คุมไลน์จำลองบน dashboard) · event = แถวที่บันทึกลง database (เฉพาะจากบอร์ด)</p>
+    <div class="tw"><table class="acts">
+      <thead><tr><th>ปุ่ม</th><th>บนบอร์ด</th><th>กดแล้วเกิดอะไร</th><th>event · มีผลกับ OEE</th></tr></thead>
+      <tbody>
+        <tr class="sec"><td colspan="4">ต่อเครื่อง M1–M4</td></tr>
+        <tr><td>RUN / STOP</td><td class="pin">สวิตช์ 7×7 กดติด<br>ขา 25 · 26 · 27 · 14</td><td>ติด = เครื่องเดิน · ปลด = เครื่องหยุด</td><td><code>run_on</code> / <code>run_off</code> · เวลาเดิน → Availability</td></tr>
+        <tr><td>🚪 เปิดฝา / ปิดฝา</td><td class="pin">ปุ่ม 6×6 กดเด้ง<br>ขา 23 · 19 · 18 · 17</td><td>กด 1 ครั้งเปิดฝา กดอีกครั้งปิด · ฝาเปิด = เครื่องหยุด (ใส่ชิ้นงาน) · ฝาบน dashboard เลื่อนตาม</td><td><code>door_open</code> / <code>door_close</code> · ลด Availability</td></tr>
+        <tr><td>KNOB → SPEED</td><td class="pin">pot<br>ขา 32 · 33 · 34 · 35</td><td>ความเร็ว 0–200 % ทีละ 5 % · 100 % = cycle มาตรฐาน (M1 18 s · M2 30 s · M3 24 s · M4 36 s) · 200 % = เร็วขึ้น 2 เท่า · 0 % = หยุด</td><td>ไม่มี event (อยู่ใน <code>speed_pct</code> สรุปรายนาที) · Performance, 0 % ลด Availability</td></tr>
+        <tr><td>🔧 Set / Maintenance</td><td class="pin">— (หน้านี้เท่านั้น)</td><td>เครื่องหยุดเพราะตั้งเครื่อง / ซ่อม · ไฟเหลือง ไม่นับว่าเสีย (DOWN)</td><td>ไลน์จำลองเท่านั้น</td></tr>
+        <tr class="sec"><td colspan="4">ทั้งไลน์</td></tr>
+        <tr><td>Alarm / E-stop</td><td class="pin">สวิตช์ 7×7 กดติด ขา 13<br>ไฟ LED บนบอร์ด ขา 2</td><td>ทุกเครื่องหยุดทันที · ไฟ LED บนบอร์ดติด</td><td><code>alarm_on</code> / <code>alarm_off</code> · เวลานี้นับเป็น stop + alarm → ลด Availability</td></tr>
+        <tr><td>✓ GOOD</td><td class="pin">ปุ่ม 6×6 ขา 16</td><td>ตรวจแล้วดี → ย้าย 1 กล่องจากกอง QC wait ไปกอง FG ของ product ที่มีชิ้นงานออกล่าสุด</td><td><code>good</code> + product · Quality</td></tr>
+        <tr><td>✕ REJECT</td><td class="pin">ปุ่ม 6×6 ขา 4</td><td>ตรวจแล้วเสีย → ย้าย 1 กล่องไปกอง NG ของ product ที่มีชิ้นงานออกล่าสุด</td><td><code>reject</code> + product · ลด Quality</td></tr>
+        <tr><td>↶ Undo last QC</td><td class="pin">— (หน้านี้เท่านั้น)</td><td>ยกเลิก GOOD / REJECT ครั้งล่าสุดในแผง OEE ของ dashboard</td><td>ไลน์จำลองเท่านั้น</td></tr>
+        <tr><td>Products · Apply</td><td class="pin">— (หน้านี้)</td><td>เปลี่ยนเส้นทาง A / B · ESP32 online: ส่งไปที่บอร์ด (บอร์ดจำไว้) · offline: ไลน์จำลองเปลี่ยนตาม · ชิ้นงานค้างบนสายพานหายไป</td><td><code>route</code> (จากบอร์ด) · OEE แยกตาม product</td></tr>
+        <tr class="sec"><td colspan="4">ไลน์จำลองบน dashboard (ESP32 offline)</td></tr>
+        <tr><td>❚❚ Pause / ▶ Run line</td><td class="pin">—</td><td>หยุด / เดินเวลาของไลน์จำลอง</td><td>—</td></tr>
+        <tr><td>1× · 4× · 10×</td><td class="pin">—</td><td>เร่งเวลาจำลอง (4× = 1 วินาทีจริงเท่ากับ 4 วินาทีบนไลน์)</td><td>—</td></tr>
+        <tr><td>⟲ Reset line</td><td class="pin">—</td><td>ล้างตัวนับและชิ้นงานบนไลน์จำลอง (กด 2 ครั้งกันพลาด)</td><td>—</td></tr>
+        <tr class="sec"><td colspan="4">บนตัวบอร์ด ESP32</td></tr>
+        <tr><td>EN</td><td class="pin">ปุ่มบนตัวบอร์ด</td><td>รีสตาร์ตบอร์ด · ตัวนับบนบอร์ดเริ่มใหม่ แต่ใน database ไม่หาย · เส้นทาง product ยังจำไว้</td><td><code>boot</code></td></tr>
+        <tr><td>BOOT</td><td class="pin">ปุ่มบนตัวบอร์ด</td><td>ใช้ตอนอัปโหลดโค้ดเท่านั้น</td><td>—</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <details class="card wiring" id="wiring">
+    <summary><span class="k">Wiring map · การต่อสายบอร์ด ESP32</span></summary>
+    <iframe title="ESP32 wiring map" data-src="wiring-map.html"></iframe>
+    <a href="wiring-map.html" target="_blank" rel="noopener">เปิดเต็มหน้า ↗</a>
+  </details>
 
   <section class="logs">
     <div class="card">
@@ -533,6 +582,13 @@ $("go").addEventListener("click", connect);
 $("pass").addEventListener("keydown", (e) => { if (e.key === "Enter" && !client) connect(); });
 $("ev-clear").addEventListener("click", () => { $("events").innerHTML = ""; });
 $("raw-pause").addEventListener("click", (e) => { rawPaused = !rawPaused; e.target.setAttribute("aria-pressed", String(rawPaused)); e.target.textContent = rawPaused ? "Resume" : "Pause"; });
+// the wiring map loads when opened, and grows to its full height
+$("wiring").addEventListener("toggle", (e) => {
+  const f = e.currentTarget.querySelector("iframe");
+  if (!e.currentTarget.open || f.src) return;
+  f.addEventListener("load", () => { try { f.style.height = f.contentDocument.documentElement.scrollHeight + 20 + "px"; } catch {} });
+  f.src = f.dataset.src;
+});
 renderCtl(); renderRoute();
 if ($("pass").value) connect();
 </script>

@@ -111,13 +111,13 @@ td.oee{color:var(--muted);font-size:12.5px}
         <p class="what">กด 1 ครั้ง = เปิดฝา <span class="ev">door_open</span> · กดอีกครั้ง = ปิดฝา <span class="ev">door_close</span> · ฝาบนหน้าเว็บเลื่อนตาม</p>
         <p class="oee">OEE: ฝาเปิด = เครื่องหยุด → ลด <b>Availability</b></p></div>
       <div class="card" style="--c:var(--good)"><h3>GOOD · ปุ่ม 6×6 (ขา 16)</h3>
-        <p class="what">ตรวจแล้วดี → ย้าย 1 กล่องจาก <b>กอง 1 (QC wait)</b> ไป <b>กองเขียว</b> · <span class="ev">good</span> machine 0</p>
-        <p class="oee">OEE: <b>Quality</b> = good ÷ (good + reject)</p></div>
+        <p class="what">ตรวจแล้วดี → ย้าย 1 กล่องจาก <b>กอง 1 (QC wait)</b> ไป <b>กองเขียว</b> ของ product ที่มีชิ้นงานออกจากไลน์ล่าสุด · <span class="ev">good</span> machine 0 + product</p>
+        <p class="oee">OEE: <b>Quality</b> ของ product นั้น = good ÷ (good + reject)</p></div>
       <div class="card" style="--c:var(--rej)"><h3>REJECT · ปุ่ม 6×6 (ขา 4)</h3>
-        <p class="what">ตรวจแล้วเสีย → ย้าย 1 กล่องจาก <b>กอง 1</b> ไป <b>กองแดง</b> · <span class="ev">reject</span> machine 0</p>
-        <p class="oee">OEE: ลด <b>Quality</b></p></div>
+        <p class="what">ตรวจแล้วเสีย → ย้าย 1 กล่องจาก <b>กอง 1</b> ไป <b>กองแดง</b> ของ product ที่มีชิ้นงานออกจากไลน์ล่าสุด · <span class="ev">reject</span> machine 0 + product</p>
+        <p class="oee">OEE: ลด <b>Quality</b> ของ product นั้น</p></div>
       <div class="card" style="--c:var(--muted)"><h3>ชิ้นงาน · บอร์ดผลิตเอง</h3>
-        <p class="what">เครื่องที่เดินอยู่ทำเสร็จ 1 ชิ้นทุก cycle (M1 18 s · M2 30 s · M3 24 s · M4 36 s ที่ 100 %) แล้วส่งต่อเครื่องถัดไป → <span class="ev">part</span> · ชิ้นจาก M4 ลง <b>กอง 1</b></p>
+        <p class="what">เครื่องที่เดินอยู่ทำเสร็จ 1 ชิ้นทุก cycle (M1 18 s · M2 30 s · M3 24 s · M4 36 s ที่ 100 %) แล้วส่งต่อเครื่องถัดไปในเส้นทางของ product นั้น → <span class="ev">part</span> · ชิ้นจากเครื่องสุดท้ายของเส้นทาง → <span class="ev">output</span> ลง <b>กอง 1</b> ของ product (เส้นทางเลือกที่หน้า control)</p>
         <p class="oee">OEE: นับชิ้น → <b>Performance</b></p></div>
       <div class="card" style="--c:var(--run)"><h3>M1–M4 run · สวิตช์ 7×7</h3>
         <p class="what">กดติด = เครื่องเดิน <span class="ev">run_on</span> · ปลด = หยุด <span class="ev">run_off</span></p>

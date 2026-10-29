@@ -69,7 +69,6 @@ flowchart LR
 │   ├── esp32/                ← โค้ดบอร์ด (Arduino)
 │   └── google-sheets/        ← โค้ด Apps Script สำหรับ Google Sheet
 └── docs/
-    ├── wiring-map.html       ← แผนผังต่อสายบอร์ด ESP32 (เปิดด้วยเบราว์เซอร์)
     └── machines/             ← ภาพเครื่องจักรต้นแบบ (Okuma LNC-8, Okuma GENOS L250E, GFIR CK0620/II)
 ```
 
@@ -187,7 +186,7 @@ cp .env.example .env          # Windows PowerShell: copy .env.example .env
 - ตอนเปิดหน้าเว็บครั้งแรก บอร์ดจะค้างประมาณ 1–3 วินาทีระหว่างส่งไฟล์ (ครั้งต่อไปเบราว์เซอร์จำไว้ 1 ชั่วโมง)
 - ไม่อยากให้บอร์ดเปิดเว็บ: ตั้ง `USE_WEB = false` ใน `.ino`
 
-การต่อสายดูที่ [`docs/wiring-map.html`](docs/wiring-map.html)
+การต่อสายดูที่ [`OEE-System/website/wiring-map.html`](OEE-System/website/wiring-map.html) — หรือหน้า control (หัวข้อ **Wiring map** ด้านล่าง พร้อมตารางว่าแต่ละปุ่มทำอะไร)
 
 ---
 
