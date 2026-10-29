@@ -149,6 +149,8 @@ services:
     environment:
       MQTT_USER: hub
       MQTT_PASS: ${MQTT_HUB_PASS}
+      LINE_ID: ${LINE_ID}
+      LINE_NAME: ${LINE_NAME:-}   # what the pages and the reports call the line, e.g. BU 3
       MQTT_WEB_PASS: ${MQTT_WEB_PASS}   # handed out once per pairing code (GET /pair/<code>)
 
   sheets-sync:
@@ -166,6 +168,8 @@ services:
       SHEETS_EVENTS_ROWS: ${SHEETS_EVENTS_ROWS:-500}
       SHEETS_EVENTS_GAP_S: ${SHEETS_EVENTS_GAP_S:-10}
       SHEETS_MAX_ROWS: ${SHEETS_MAX_ROWS:-1000}
+      LINE_ID: ${LINE_ID}
+      LINE_NAME: ${LINE_NAME:-}
       REPORT_AT: ${REPORT_AT:-23:55}                       # the daily report to LINE (Thailand time)
       LINE_CHANNEL_TOKEN: ${LINE_CHANNEL_TOKEN:-}
       LINE_TO: ${LINE_TO:-}

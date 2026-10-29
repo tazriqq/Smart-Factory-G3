@@ -604,7 +604,7 @@ function onState(text) {
     const box = document.querySelector(`.rt-row[data-p="${p === "A" ? 0 : 1}"] .it-${f}`);
     if (document.activeElement !== box) ctl.items[p][f] = ((m.items || {})[p] || {})[f] || "";
   }
-  if (m.line) $("rt-line").textContent = m.line;
+  if (m.line) $("rt-line").textContent = m.lineName || m.line;
   if (m.shift) {
     if (S && S.shift && JSON.stringify(S.shift) !== JSON.stringify(m.shift) && m.last && m.last.by !== ME && m.last.ok) event("shift / time frame changed · from another device", "n");
     for (const f in m.shift) { const box = document.querySelector(`.sh-form [data-s="${f}"]`); if (document.activeElement !== box) ctl.shift[f] = m.shift[f]; }

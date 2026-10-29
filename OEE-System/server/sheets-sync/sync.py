@@ -42,6 +42,8 @@ LINE_TO = [x.strip() for x in os.environ.get("LINE_TO", "").split(",") if x.stri
 DASHBOARD_URL = os.environ.get("DASHBOARD_URL", "").strip()
 REPORT_STATE = "/state/last_report"   # the last day whose report went out
 TH = ZoneInfo("Asia/Bangkok")
+LINE_ID, LINE_NAME = os.environ.get("LINE_ID", "line1"), os.environ.get("LINE_NAME", "").strip()
+line_name = lambda line: LINE_NAME if LINE_NAME and line == LINE_ID else line   # e.g. line1 -> BU 3
 
 RATIOS = "availability, performance, quality, oee"
 STAMP = "YYYY-MM-DD HH24:MI:SS:MS"   # every time in the sheet and in this log: 2026-10-30 14:05:09:123
@@ -151,7 +153,7 @@ def report_rows(conn):
     rows = []
     for r in daily_reports(conn).values():
         r4 = lambda x: round(x, 4) if x is not None else ""
-        rows.append([dt.datetime.combine(r["day"], dt.time()).strftime("%Y-%m-%d %H:%M:%S:000"), r["line"],
+        rows.append([dt.datetime.combine(r["day"], dt.time()).strftime("%Y-%m-%d %H:%M:%S:000"), line_name(r["line"]),
                      "final" if r["day"] < today else "today so far",
                      r4(r["oee"]), r4(r["a"]), r4(r["p"]), r4(r["q"]), r["output"], r["good"], r["reject"],
                      round(r["run_h"], 2), round(r["stop_h"], 2), round(r["alarm_min"], 1), r["alarms"],
@@ -163,7 +165,7 @@ def report_rows(conn):
 
 def report_message(r):
     pct = lambda x: "—" if x is None else f"{x * 100:.0f}%"
-    lines = [f"📊 สรุปประจำวัน {r['day'].strftime('%d/%m/%Y')} · {r['line']}",
+    lines = [f"📊 สรุปประจำวัน {r['day'].strftime('%d/%m/%Y')} · {line_name(r['line'])}",
              f"OEE {pct(r['oee'])}  (A {pct(r['a'])} · P {pct(r['p'])} · Q {pct(r['q'])})"
              + (f"  {'▲' if r['oee_delta'] >= 0 else '▼'} {abs(r['oee_delta']) * 100:.0f} จุดจากเมื่อวาน" if r["oee_delta"] is not None else "")]
     if r["products"]:

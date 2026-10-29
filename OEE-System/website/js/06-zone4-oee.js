@@ -97,7 +97,8 @@
     return { w0: t - n, w1: t, bad: "" };
   }
 
-  // ───────── the record: [from, to, run] segments and [time, good] parts ─────────
+  // ───────── the record: [from, to, run, cause] segments and [time, good] parts ─────────
+  // cause: why the line stood still (stops only; see window.__line.stopCause), "" when not known
   let log = { segs: [], parts: [] };
   function loadLog() {
     if (isDemo()) { log = { segs: [], parts: [] }; return; }
@@ -119,15 +120,19 @@
     lastPos = st.pos;
     running = st.spindle > 0.4 && real - lastMoveAt < 1500;
     if (window.__board?.live) running = window.__board.lineRun();   // board: line runs when all 4 run switches are on and no alarm
+    // the line: it runs when every machine on a product route runs; otherwise this says why not
+    const cause = window.__line?.stopCause ? window.__line.stopCause() : null;
+    if (cause !== null) running = !cause;
     if (isDemo() && demo.pending) { demo.pending = false; demo.realAt = real; }
     const t = now();
     const run = running ? 1 : 0;
     const tol = isDemo() ? 5000 * DEMO_RATE : 65000; // longer gaps are "not recorded"
     const last = log.segs[log.segs.length - 1];
+    const why = run ? "" : cause || "";
     if (last && t >= last[1] && t - last[1] <= tol) {
-      if (last[2] === run) last[1] = t;
-      else log.segs.push([last[1], t, run]);
-    } else if (!last || t > last[1]) log.segs.push([t, t, run]);
+      if (last[2] === run && (last[3] || "") === why) last[1] = t;
+      else log.segs.push([last[1], t, run, why]);
+    } else if (!last || t > last[1]) log.segs.push([t, t, run, why]);
     // cap the record so localStorage stays small
     if (log.segs.length > 20000) log.segs.splice(0, log.segs.length - 20000);
     dirty = true;
@@ -286,6 +291,90 @@
     svg.setAttribute("aria-label", `Shift ${hhmm(sh.start)} to ${hhmm(sh.end)}, break ${hhmm(sh.bs)} to ${hhmm(sh.be)}. Time frame ${hhmm(w0)} to ${hhmm(w1)}: run ${dur(m.run)}, stopped ${dur(m.stop)}, OEE ${pc(m.OEE)}.`);
   }
   addEventListener("resize", () => { shownSvg = ""; render(); });
+
+  // ───────── the timeline, large: each stop led out to its cause ─────────
+  const zoomBtn = Object.assign(document.createElement("button"), { type: "button", className: "lb-btn oee-expand", textContent: "⤢ ขยาย", title: "ขยายกราฟ · ดูสาเหตุที่หยุด" });
+  q(".oee-chart").append(zoomBtn);
+  const zoom = document.createElement("div");
+  zoom.className = "oee-zoom"; zoom.hidden = true;
+  zoom.setAttribute("role", "dialog"); zoom.setAttribute("aria-modal", "true"); zoom.setAttribute("aria-label", "Shift timeline and stop causes");
+  zoom.innerHTML = `<div class="oz-box"><div class="oz-h"><b>Shift timeline · สาเหตุที่หยุด</b><span data-z="range"></span><button type="button" class="lb-btn" data-z="close" aria-label="Close">✕</button></div>
+    <div class="oz-chart"><svg data-z="svg"></svg></div>
+    <div class="oz-grid"><div><h4>เวลาหยุดตามสาเหตุ</h4><div data-z="sum"></div></div><div><h4>ทุกช่วงที่หยุด</h4><div class="oz-list" data-z="list"></div></div></div></div>`;
+  document.body.append(zoom);
+  const zq = (k) => zoom.querySelector(`[data-z="${k}"]`);
+  const esc = (t) => String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;");
+  const causeOf = (c) => c || "ไม่ทราบสาเหตุ";
+  // the stops inside [r0, min(r1, t)], next ones with the same cause joined
+  function stopsIn(r0, r1) {
+    const out = [];
+    for (const [a, b, r, c] of log.segs) {
+      if (r || b <= r0 || a >= r1) continue;
+      const a1 = Math.max(a, r0), b1 = Math.min(b, r1), last = out[out.length - 1];
+      if (last && last.c === (c || "") && a1 - last.b < 1000) last.b = b1;
+      else out.push({ a: a1, b: b1, c: c || "" });
+    }
+    return out.filter((s) => s.b > s.a);
+  }
+  function drawZoom() {
+    if (zoom.hidden) return;
+    const t = now(), sh = shiftOf(t);
+    if (sh.bad) return;
+    const r0 = sh.start, r1 = sh.end, upto = Math.min(t, r1);
+    zq("range").textContent = `${hhmm(r0)} – ${hhmm(r1)}${isDemo() ? " · demo clock" : ""}`;
+    const W = Math.max(640, Math.min(1500, zoom.querySelector(".oz-chart").clientWidth || 1000));
+    const L = 16, R = W - 16, Y = 30, BH = 46;
+    const x = (v) => L + ((v - r0) / (r1 - r0)) * (R - L), X = (v) => x(v).toFixed(1);
+    const p = [`<rect class="oee-future" x="${L}" y="${Y}" width="${R - L}" height="${BH}"/>`];
+    for (const [a, b, rr] of log.segs) {
+      const a1 = Math.max(a, r0), b1 = Math.min(b, r1);
+      if (b1 > a1) p.push(`<rect class="${rr ? "oee-run" : "oee-stop"}" x="${X(a1)}" y="${Y}" width="${Math.max(0.8, x(b1) - x(a1)).toFixed(2)}" height="${BH}"/>`);
+    }
+    if (sh.be > sh.bs) p.push(`<rect class="oee-break" x="${X(sh.bs)}" y="${Y}" width="${(x(sh.be) - x(sh.bs)).toFixed(1)}" height="${BH}"/>`);
+    p.push(`<rect class="oee-frame" x="${L}" y="${Y}" width="${R - L}" height="${BH}"/>`);
+    const hour = 60 * MIN;
+    for (let h = Math.ceil(r0 / hour) * hour; h <= r1; h += hour) {
+      p.push(`<line class="oee-tick" x1="${X(h)}" x2="${X(h)}" y1="${Y + BH}" y2="${Y + BH + 5}"/><text x="${X(h)}" y="${Y + BH + 17}" text-anchor="middle">${hhmm(h)}</text>`);
+    }
+    if (t >= r0 && t <= r1) p.push(`<line class="oee-nowline" x1="${X(t)}" x2="${X(t)}" y1="${Y - 8}" y2="${Y + BH + 8}"/>`);
+    // labels for the longest stops, in lanes under the bar so none overlap; a lead from each stop to its label
+    const stops = stopsIn(r0, upto);
+    const top = [...stops].sort((a, b) => (b.b - b.a) - (a.b - a.a)).slice(0, 16).sort((a, b) => a.a - b.a);
+    const lanes = [], leads = [], tags = [], LANE0 = Y + BH + 40, LH = 30;
+    for (const s of top) {
+      const text = `${hhmm(s.a)}–${hhmm(s.b)} · ${dur(s.b - s.a)} · ${causeOf(s.c)}`;
+      const w = Math.min(R - L, text.length * 6.4 + 16), cx = (x(s.a) + x(s.b)) / 2;
+      const lx = Math.max(L, Math.min(R - w, cx - w / 2));
+      let lane = lanes.findIndex((end) => end + 8 < lx);
+      if (lane < 0) { if (lanes.length >= 6) continue; lane = lanes.length; lanes.push(0); }
+      lanes[lane] = lx + w;
+      const ly = LANE0 + lane * LH;
+      leads.push(`<polyline class="oz-lead" points="${cx.toFixed(1)},${Y + BH} ${cx.toFixed(1)},${ly - 16} ${(lx + w / 2).toFixed(1)},${ly - 16} ${(lx + w / 2).toFixed(1)},${ly - 11}"/>`,
+        `<circle class="oz-dot" cx="${cx.toFixed(1)}" cy="${Y + BH}" r="3"/>`);
+      tags.push(`<rect class="oz-tag" x="${lx.toFixed(1)}" y="${ly - 11}" width="${w.toFixed(1)}" height="20" rx="4"/>`,
+        `<text class="oz-tag-t" x="${(lx + 8).toFixed(1)}" y="${ly + 3}">${esc(text)}</text>`);
+    }
+    p.push(...leads, ...tags);   // the labels over every lead, so a lead never runs across a label
+    const H = LANE0 + Math.max(1, lanes.length) * LH + 6;
+    const svgEl = zq("svg");
+    svgEl.setAttribute("viewBox", `0 0 ${W} ${H}`); svgEl.setAttribute("width", W); svgEl.setAttribute("height", H);
+    svgEl.innerHTML = p.join("") + (stops.length ? "" : `<text x="${W / 2}" y="${LANE0}" text-anchor="middle" class="oz-none">ไม่มีช่วงหยุดในกะนี้ (จนถึงตอนนี้)</text>`);
+    // time stopped by cause, longest first
+    const by = {};
+    for (const s of stops) by[causeOf(s.c)] = (by[causeOf(s.c)] || 0) + (s.b - s.a);
+    const total = Object.values(by).reduce((n, v) => n + v, 0);
+    zq("sum").innerHTML = Object.entries(by).sort((a, b) => b[1] - a[1]).map(([c, v]) =>
+      `<div class="oz-row"><span>${esc(c)}</span><span class="oz-bar"><i style="width:${(v / total * 100).toFixed(1)}%"></i></span><b>${dur(v)}</b><em>${Math.round(v / total * 100)}%</em></div>`).join("")
+      + (total ? `<div class="oz-row oz-total"><span>รวม</span><span></span><b>${dur(total)}</b><em></em></div>` : `<p class="oz-none">—</p>`);
+    zq("list").innerHTML = stops.slice().reverse().map((s) => `<div><time>${hhmm(s.a)}–${hhmm(s.b)}</time><b>${dur(s.b - s.a)}</b><span>${esc(causeOf(s.c))}</span></div>`).join("") || `<p class="oz-none">—</p>`;
+  }
+  const openZoom = () => { zoom.hidden = false; drawZoom(); zq("close").focus(); };
+  const closeZoom = () => { zoom.hidden = true; zoomBtn.focus(); };
+  zoomBtn.addEventListener("click", openZoom);
+  zq("close").addEventListener("click", closeZoom);
+  zoom.addEventListener("click", (e) => { if (e.target === zoom) closeZoom(); });
+  addEventListener("keydown", (e) => { if (e.key === "Escape" && !zoom.hidden) closeZoom(); });
+  setInterval(drawZoom, 1000);
 
   // ───────── start ─────────
   if (isDemo()) startDemo();

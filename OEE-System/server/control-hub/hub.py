@@ -41,6 +41,7 @@ USER = os.environ["MQTT_USER"]
 PASS = os.environ["MQTT_PASS"]
 BASE = os.environ.get("LINE_TOPIC", "group3/dpx/line1")
 LINE_ID = os.environ.get("LINE_ID", BASE.rsplit("/", 1)[-1])
+LINE_NAME = os.environ.get("LINE_NAME", "").strip() or LINE_ID   # what the pages call the line, e.g. "BU 3"
 T_STATE, T_SET, T_BOARD = BASE + "/control", BASE + "/control/set", BASE + "/board"
 T_PAIR, T_EVENTS = BASE + "/control/pair", BASE + "/events"
 PRESS_EVENT = {"good": "good", "rej": "reject", "undo": "undo", "reset": "reset", "clear": "oee_clear"}
@@ -59,7 +60,7 @@ state = {
     "pot": [512, 512, 512, 512], "run": [1, 1, 1, 1], "door": [0, 0, 0, 0], "setup": [0, 0, 0, 0], "al": 0,
     "sim": {"run": 1, "speed": 4}, "route": "1234-", "useBoard": 1,
     "good": 0, "rej": 0, "undo": 0, "reset": 0,
-    "items": {"A": {"code": "", "name": ""}, "B": {"code": "", "name": ""}}, "line": LINE_ID,
+    "items": {"A": {"code": "", "name": ""}, "B": {"code": "", "name": ""}}, "line": LINE_ID, "lineName": LINE_NAME,
     "qc": {"A": {"good": 0, "rej": 0}, "B": {"good": 0, "rej": 0}},   # QC presses per product (good / rej = all)
     # the OEE panel of every dashboard: shift, ideal cycle, clock (demo = 1 s is 1 min), time frame; clear = counter
     "shift": {"start": "08:00", "work": 8, "bstart": "12:00", "blen": 60, "cycle": 120, "clock": "demo",

@@ -45,7 +45,9 @@ const routeText = (r) => r.map((ms) => ms.map((i) => i + 1).join('')).join('-');
 let ROUTE = parseRoute((() => { try { return localStorage.getItem(ROUTE_KEY); } catch { return null; } })()) || [[0, 1, 2, 3], []];
 const prodOf = (i) => ROUTE.findIndex((ms) => ms.includes(i));   // 0 = A, 1 = B, -1 = idle
 // what each product is (code, name; set on the control page, kept by the server's control-hub) and the line
-let ITEMS = { A: { code: '', name: '' }, B: { code: '', name: '' } }, LINE_ID = 'line1';
+let ITEMS = { A: { code: '', name: '' }, B: { code: '', name: '' } }, LINE_ID = 'line1', LINE_NAME = '';
+const lineName = () => LINE_NAME || LINE_ID;   // what the pages call the line (LINE_NAME in server/.env, e.g. BU 3)
+let floorLabel = null;                           // the line's name on the floor grid
 const itemText = (p) => { const it = ITEMS[PRODUCTS[p]] || {}; return [it.code, it.name].filter(Boolean).join(' '); };
 
 // conveyors: start on the floor (u, v) and run along one axis per move
@@ -96,7 +98,8 @@ for (const s of [ground, beltsSvg]) { s.setAttribute('width', FW); s.setAttribut
   const g = el('g', {}, ground);
   for (let u = Math.ceil(u0 / step) * step; u <= u1; u += step) { const a = S(u, v0), b = S(u, v1); el('line', { x1: a[0], y1: a[1], x2: b[0], y2: b[1], class: 'gr-grid' }, g); }
   for (let v = Math.ceil(v0 / step) * step; v <= v1; v += step) { const a = S(u0, v), b = S(u1, v); el('line', { x1: a[0], y1: a[1], x2: b[0], y2: b[1], class: 'gr-grid' }, g); }
-  const t = el('text', { x: 24, y: FH - 24, class: 'gr-text' }, ground); t.textContent = 'LINE 1 · FLOOR GRID 1 m';
+  const t = el('text', { x: 24, y: FH - 24, class: 'gr-text' }, ground); t.textContent = 'FLOOR GRID 1 m';
+  floorLabel = t;
 })();
 
 /* ---------- machines ---------- */
@@ -209,6 +212,13 @@ const slots = MACHINES.map((m, i) => {
   return { m, slot, tag, pad, padLabel, door, andon, doorBtn: tag.querySelector('.tg-door'), setup: false, dot: tag.querySelector('i'), bar: tag.querySelector('.tg-bar span'), n: tag.querySelector('.tg-n'), pr: tag.querySelector('.tg-pr'), spd: tag.querySelector('.spd'), oee: tag.querySelector('.tg-oee strong'), apq: tag.querySelector('.tg-apq'), ct: tag.querySelector('.tg-ct b'), ctx: tag.querySelector('.tg-ctx') };
 });
 const outs = [];      // one output panel + piles per product
+// the line's name wherever the page shows it
+function showLineName() {
+  const n = lineName();
+  const t = document.querySelector('.line-bar .lb-title'); if (t) t.textContent = `${n} · 4 machines`;
+  if (floorLabel) floorLabel.textContent = `${n} · FLOOR GRID 1 m`;
+  document.querySelectorAll('.od-line').forEach((e) => { e.textContent = n; });
+}
 const badges = [];   // WIP badges between stations and the output counter, placed like the tags
 function placeTags() {
   const put = (node, [x, y]) => { node.style.left = (cam.x + x * cam.k) + 'px'; node.style.top = (cam.y + y * cam.k) + 'px'; };
@@ -700,7 +710,7 @@ function render() {
     out.by.textContent = wait ? `${wait} รอตรวจ · กด GOOD / REJECT เพื่อคัดกอง 1` : checked ? 'ตรวจครบแล้ว' : 'ยังไม่มีชิ้นงานออกจากไลน์';
   });
   $l('fin').textContent = finished; $l('wip').textContent = wip; $l('bn').textContent = bn;
-  const now = `<small>กำลังผลิต · ${LINE_ID}</small>` + ROUTE.map((ms, p) => ms.length ? `<span class="o-p" data-p="${p}">${PRODUCTS[p]}</span><b>${itemText(p) || 'product ' + PRODUCTS[p]}</b><em>${ms.map((i) => MACHINES[i].no).join('→')}</em>` : '').join('');
+  const now = `<small>กำลังผลิต · ${lineName()}</small>` + ROUTE.map((ms, p) => ms.length ? `<span class="o-p" data-p="${p}">${PRODUCTS[p]}</span><b>${itemText(p) || 'product ' + PRODUCTS[p]}</b><em>${ms.map((i) => MACHINES[i].no).join('→')}</em>` : '').join('');
   if (nowBox.innerHTML !== now) nowBox.innerHTML = now;
   $l('th').textContent = simT > 60 ? (finished / (simT / 3600)).toFixed(0) + ' /h' : '— /h';
   $l('time').textContent = fmt(simT);
@@ -825,7 +835,7 @@ const od = document.createElement('section');
 od.className = 'od'; od.hidden = true; od.setAttribute('role', 'tabpanel'); od.setAttribute('aria-label', 'OEE dashboard');
 const SER = ['var(--s1)', 'var(--s2)', 'var(--s3)', 'var(--s4)'];
 od.innerHTML = `<div class="od-in">
-  <div class="od-h"><h2>OEE Dashboard</h2><span>Line 1 · since start or last reset · updates live</span></div>
+  <div class="od-h"><h2>OEE Dashboard</h2><span><b class="od-line"></b> · since start or last reset · updates live</span></div>
   <div class="od-card"><div class="od-kpis" data-d="kpis"></div></div>
   <div class="od-ms" data-d="ms"></div>
   <div class="od-card"><h3>OEE over line time · dashed line = 85 % world-class target</h3>
@@ -1083,7 +1093,7 @@ document.querySelector('.line-bar').after(mv);
 const mvCards = [...mv.querySelectorAll('.mv-m')].map((c) => ({ c, dot: c.querySelector('.mv-dot'), pr: c.querySelector('.tg-pr'), st: c.querySelector('.mv-st'), v: Object.fromEntries([...c.querySelectorAll('[data-v]')].map((e) => [e.dataset.v, e])) }));
 function renderPhone() {
   if (!phone.matches) return;
-  mv.querySelector('.mv-outs').innerHTML = outs.map((o) => `<div class="mv-card"><div class="mv-h"><span class="o-p" data-p="${o.p}">${PRODUCTS[o.p]}</span><b>${itemText(o.p) || 'Output ' + PRODUCTS[o.p]}</b><em>${LINE_ID} · ${ROUTE[o.p].map((i) => MACHINES[i].no).join(' → ')}</em></div>
+  mv.querySelector('.mv-outs').innerHTML = outs.map((o) => `<div class="mv-card"><div class="mv-h"><span class="o-p" data-p="${o.p}">${PRODUCTS[o.p]}</span> <b>${itemText(o.p) || 'Output ' + PRODUCTS[o.p]}</b><em>${lineName()} · ${ROUTE[o.p].map((i) => MACHINES[i].no).join(' → ')}</em></div>
     <div class="mv-g"><span><small>total</small><b>${o.tot.textContent}</b></span><span><small>QC wait</small><b>${o.wait.textContent}</b></span><span class="o-good"><small>good</small><b>${o.good.textContent}</b></span><span class="o-bad"><small>scrap</small><b>${o.bad.textContent}</b></span></div>
     <div class="mv-apq">yield ${o.yld.textContent}</div></div>`).join('');
   slots.forEach((s, i) => {
@@ -1173,13 +1183,27 @@ window.__line = { MACHINES, BELTS, slots, placeTags, fit, oeeOf, speedChanged() 
   setSpeed(n) { const b = document.querySelector(`.line-bar [data-speed="${n}"]`); if (b && speed !== n) b.click(); },
   reset,
   setRouteText(t) { const r = parseRoute(t); if (r) setRoute(r); },
+  // why the line is stopped right now ("" = running): the alarm, a paused simulation, or each machine on a
+  // product route that stands still, and why. The OEE panel keeps it with each stop in its timeline.
+  stopCause() {
+    const b = BOARD(), s = b && (b.live ? b : b.local);
+    if (s && s.al) return 'ALARM · E-stop';
+    if (!boardLive() && !running) return 'simulation paused';
+    const why = (i) => SU(i) ? 'set-up / maintenance' : DR(i) ? 'door open' : s && !s.run[i] ? 'run switch off' : 'speed 0 %';
+    return ROUTE.flat().filter((i) => spOf(i) === 0).map((i) => `${MACHINES[i].no} ${why(i)}`).join(' · ');
+  },
   // a QC press for product p (0 = A, 1 = B) from the control page: its piles, and the OEE panel's count
   qcPress(p, kind) {
     if (boardLive() || !qcL[p]) return;
     qcL[p][kind === 'good' ? 'good' : 'rej']++;
     document.querySelector(`.dash-oee button[data-part="${kind === 'good' ? 'good' : 'bad'}"]`)?.click();
   },
-  setItems(items, line) { ITEMS = { A: { ...ITEMS.A, ...(items.A || {}) }, B: { ...ITEMS.B, ...(items.B || {}) } }; if (line) LINE_ID = line; },
+  setItems(items, line, name) {
+    ITEMS = { A: { ...ITEMS.A, ...(items.A || {}) }, B: { ...ITEMS.B, ...(items.B || {}) } };
+    if (line) LINE_ID = line;
+    if (name !== undefined) LINE_NAME = name;
+    showLineName();
+  },
   setSetup(i, on) { if (!slots[i] || !!window.__setup[i] === !!on) return; window.__setup[i] = !!on; slots[i].tag.querySelector('.tg-ma').setAttribute('aria-pressed', String(!!on)); },
   toggleDoor(i) { const s = slots[i]; if (s && !boardLive() && s.door.can()) s.door.toggle(); } };
 

@@ -314,7 +314,7 @@ async function openMqtt(my) {
 let lastControl = null, controlAt = 0, controlSrc = null;
 function followControl(m) {
   controlSrc = m.src === "sim" || m.src === "board" ? m.src : null;
-  if (m.items) window.__line?.setItems?.(m.items, m.line);   // what is being made, whichever source drives the line
+  if (m.items) window.__line?.setItems?.(m.items, m.line, m.lineName);   // what is being made, whichever source drives the line
   if (m.shift) window.oee?.applySettings?.(m.shift);          // the shift and time frame, set on the control page
   if (lastControl && lastControl.id === m.id && (m.clear >>> 0) > (lastControl.clear >>> 0)) window.oee?.clear?.();
   if (controlSrc === "board") { lastControl = m; return; }
