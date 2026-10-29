@@ -4,6 +4,8 @@
 //   USB        one JSON line every 100 ms (and at once when something changes), 115200 baud
 //   Bluetooth  the same line over BLE "Nordic UART" (name CNC-Knobs), in 20-byte pieces
 //   Wi-Fi      GET http://192.168.1.200/data  ->  the same line
+//              GET http://192.168.1.200/      ->  the whole dashboard (website/, packed into web_files.h
+//              by esp32/build_web.py), so any phone / computer on the Wi-Fi opens it without the server
 //   MQTT       the same line to a broker (topic MQTT_TOPIC), so the website works from anywhere,
 //              plus events and a one-minute summary per machine (MQTT_EVENTS / MQTT_MINUTES), which the
 //              server stores in its database to work out OEE (server/postgres/schema.sql)
@@ -54,6 +56,7 @@
 #include <BLEServer.h>
 #include <BLEUtils.h>
 #include <BLE2902.h>
+#include "web_files.h"   // the website, gzipped (esp32/build_web.py)
 
 // passwords and private addresses live in secrets.h, which is not uploaded to GitHub
 #if __has_include("secrets.h")
@@ -77,6 +80,7 @@ const bool USE_WIFI   = true;   // false to skip Wi-Fi (USB and Bluetooth still 
 const bool USE_BLE    = true;
 const bool USE_MQTT   = true;
 const bool USE_LOG    = true;   // events and minute rows for the database (over MQTT)
+const bool USE_WEB    = true;   // serve the dashboard at http://<board>/ (false: only /data)
 
 const char* ssid     = SECRET_WIFI_SSID;
 const char* password = SECRET_WIFI_PASS;
@@ -237,6 +241,20 @@ void handleOptions() {
   server.send(204);
 }
 
+// the dashboard from web_files.h; a page load holds up the loop for a moment while it is sent
+void handleWeb() {
+  String path = server.uri();
+  if (path.endsWith("/")) path += "index.html";
+  for (size_t i = 0; i < WEB_FILE_COUNT; i++) {
+    if (path != WEB_FILES[i].path) continue;
+    server.sendHeader("Content-Encoding", "gzip");
+    server.sendHeader("Cache-Control", "max-age=3600");
+    server.send_P(200, WEB_FILES[i].type, (const char*)WEB_FILES[i].data, WEB_FILES[i].len);
+    return;
+  }
+  server.send(404, "text/plain", "not found\n");
+}
+
 void startWiFi() {
   WiFi.mode(WIFI_STA);
   if (!WiFi.config(local_IP, gateway, subnet, primaryDNS)) Serial.println("# Wi-Fi: static IP setup failed");
@@ -245,16 +263,15 @@ void startWiFi() {
   Serial.printf("# Wi-Fi: connecting to %s ...\n", ssid);
   server.on("/data", HTTP_GET, handleData);
   server.on("/data", HTTP_OPTIONS, handleOptions);
-  server.on("/", HTTP_GET, []() {
-    server.send(200, "text/plain", "Smart factory board. Live data: /data\n");
-  });
+  if (USE_WEB) server.onNotFound(handleWeb);
+  else server.on("/", HTTP_GET, []() { server.send(200, "text/plain", "Smart factory board. Live data: /data\n"); });
   server.begin();
 }
 
 void watchWiFi() {
   static bool was = false;
   bool now = WiFi.status() == WL_CONNECTED;
-  if (now && !was) Serial.printf("# Wi-Fi: connected, data at http://%s/data\n", WiFi.localIP().toString().c_str());
+  if (now && !was) Serial.printf("# Wi-Fi: connected, dashboard at http://%s/ , data at /data\n", WiFi.localIP().toString().c_str());
   if (!now && was) Serial.println("# Wi-Fi: lost connection, retrying ...");
   was = now;
 }

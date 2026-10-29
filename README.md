@@ -6,6 +6,7 @@
 flowchart LR
     subgraph board["บอร์ด ESP32"]
         hw["ปุ่มหมุน M1–M4 · ปุ่มฝา<br/>GOOD / REJECT · alarm"]
+        bweb["web server :80<br/>หน้าเว็บ + /data"]
     end
 
     subgraph server["เครื่อง server · docker compose (OEE-System/server)"]
@@ -16,9 +17,12 @@ flowchart LR
         ifx[("InfluxDB :8086")]
         gf["Grafana :3000"]
         ss["sheets-sync<br/>ทุก 15 นาที + Events ทุก ~10 วินาที"]
+        cf["cloudflared<br/>(--profile tunnel)"]
     end
 
-    browser["เบราว์เซอร์<br/>Chrome / Edge"]
+    browser["เบราว์เซอร์ใน Wi-Fi<br/>Chrome / Edge"]
+    remote["เบราว์เซอร์ที่ไหนก็ได้<br/>https://oee.&lt;domain&gt;"]
+    cloud["Cloudflare<br/>(+ Access: login ด้วยอีเมล)"]
     gs["Google Sheet<br/>(Apps Script)"]
     claude["Claude<br/>(MCP)"]
 
@@ -32,7 +36,12 @@ flowchart LR
     pg -. "อ่านอย่างเดียว (reader)" .-> claude
     web -- "โหลดหน้าเว็บ" --> browser
     mq -- "WebSocket :9001 (ข้อมูลสด)" --> browser
-    hw -. "หรือต่อตรง: USB / Bluetooth / Wi-Fi /data" .-> browser
+    hw -. "หรือต่อตรง: USB / Bluetooth" .-> browser
+    bweb -. "http://192.168.1.200 (ไม่ต้องมี server)" .-> browser
+    web --> cf
+    gf --> cf
+    cf -- "tunnel ขาออก (ไม่ต้องเปิดพอร์ตเราเตอร์)" --> cloud
+    cloud -- "HTTPS · wss /mqtt" --> remote
 ```
 
 - **ESP32** อ่านปุ่ม / สวิตช์ แล้วส่ง 3 topic ผ่าน MQTT: `board` (สถานะสด ~1 ครั้ง/วินาที), `events` (กดปุ่ม, เปิดฝา, เดิน / หยุด, ผลิตเสร็จ 1 ชิ้น), `minutes` (สรุปทุก 1 นาที / เครื่อง)
@@ -40,7 +49,8 @@ flowchart LR
 - **Telegraf** เขียนทุกข้อความลง **PostgreSQL** (ที่เก็บหลัก, คำนวณ OEE ด้วย view `oee_daily` / `oee_hourly`) และ **InfluxDB** (ให้ Grafana วาดกราฟสด)
 - **sheets-sync** อ่านสรุป OEE จาก PostgreSQL ส่งขึ้น **Google Sheet**
 - **Claude** อ่าน database ผ่าน MCP ด้วย user `reader` (อ่านอย่างเดียว)
-- หน้าเว็บต่อบอร์ดตรงๆ ได้ด้วย (USB / Bluetooth / Wi-Fi) โดยไม่ต้องมี server — แต่จะไม่มีการบันทึกลง database
+- **บอร์ดเปิดหน้าเว็บเองได้** ที่ `http://192.168.1.200` (หน้าเว็บฝังอยู่ในโค้ดบอร์ด) และหน้าเว็บต่อบอร์ดตรงๆ ได้ด้วย USB / Bluetooth — ใช้ได้แม้ server ปิด แต่จะไม่มีการบันทึกลง database
+- **cloudflared** เปิดหน้าเว็บ + Grafana ให้เข้าจากที่ไหนก็ได้ผ่าน Cloudflare Tunnel (nginx ส่ง `/mqtt` ต่อให้ Mosquitto จึงใช้ address เดียว)
 
 คู่มือนี้คือ **ขั้นตอนทั้งหมดหลัง clone ไปใช้บนเครื่องใหม่** — รายละเอียดเชิงลึก (ตาราง database, สูตร OEE, topic MQTT, โครงหน้าเว็บ) อยู่ใน [`OEE-System/README.md`](OEE-System/README.md)
 
@@ -161,7 +171,16 @@ cp .env.example .env          # Windows PowerShell: copy .env.example .env
    IPAddress gateway(192, 168, 1, 1);      // IP ของเราเตอร์
    ```
 3. เปิด `SmartFactoryBoard_MQTT.ino` ด้วย Arduino IDE → Tools → Board **ESP32 Dev Module**, Partition Scheme **Huge APP (3MB No OTA/1MB SPIFFS)**, Port = พอร์ตของบอร์ด → **Upload**
-4. Serial Monitor (115200) ต้องเห็น `# MQTT: connected, publishing to group3/dpx/line1/board`
+4. Serial Monitor (115200) ต้องเห็น `# Wi-Fi: connected, dashboard at http://192.168.1.200/` และ `# MQTT: connected, publishing to group3/dpx/line1/board`
+
+**หน้าเว็บในบอร์ด:** เปิด `http://192.168.1.200` (IP ของบอร์ด) จากมือถือ / คอมใน Wi-Fi เดียวกัน → หน้าเว็บต่อบอร์ดผ่าน Wi-Fi ให้เอง ไม่ต้องมี server
+- หน้าเว็บถูกบีบอัดฝังอยู่ในไฟล์ `web_files.h` — **ถ้าแก้อะไรใน `OEE-System/website/` ต้องสร้างไฟล์นี้ใหม่แล้วอัปโหลดบอร์ดอีกครั้ง**:
+  ```bash
+  cd OEE-System
+  python3 esp32/build_web.py
+  ```
+- ตอนเปิดหน้าเว็บครั้งแรก บอร์ดจะค้างประมาณ 1–3 วินาทีระหว่างส่งไฟล์ (ครั้งต่อไปเบราว์เซอร์จำไว้ 1 ชั่วโมง)
+- ไม่อยากให้บอร์ดเปิดเว็บ: ตั้ง `USE_WEB = false` ใน `.ino`
 
 การต่อสายดูที่ [`docs/wiring-map.html`](docs/wiring-map.html)
 
@@ -184,6 +203,8 @@ server ส่งสรุป OEE ขึ้นชีตทุก 15 นาที 
 | อะไร | ที่อยู่ | login |
 |---|---|---|
 | หน้าเว็บ | `http://<SERVER_IP>:8080` | Board via **MQTT** → user `web` · password = `MQTT_WEB_PASS` → **Connect** |
+| หน้าเว็บจากบอร์ด | `http://192.168.1.200` | ไม่ต้อง login — ต่อบอร์ดผ่าน Wi-Fi ให้เอง |
+| หน้าเว็บจากที่ไหนก็ได้ | `https://oee.<domain>` | ดูขั้นตอนที่ 11 |
 | Grafana | `http://<SERVER_IP>:3000` | `admin` / `GRAFANA_ADMIN_PASSWORD` |
 | InfluxDB | `http://<SERVER_IP>:8086` | `admin` / `INFLUX_ADMIN_PASSWORD` |
 | PostgreSQL | `<SERVER_IP>:5432` database `factory` | `reader` / `PG_READER_PASS` (อ่านอย่างเดียว) · `factory_admin` / `PG_ADMIN_PASSWORD` |
@@ -238,6 +259,35 @@ docker compose start telegraf sheets-sync
 
 ---
 
+## 11. (ไม่บังคับ) เข้าหน้าเว็บจากที่ไหนก็ได้ด้วย Cloudflare Tunnel
+
+ต้องมี domain ที่ใช้ DNS ของ Cloudflare แล้ว · ไม่ต้องเปิดพอร์ตที่เราเตอร์ เพราะ tunnel ต่อออกจากเครื่อง server ไปหา Cloudflare เอง
+
+1. **สร้าง tunnel:** https://one.dash.cloudflare.com → **Networks → Tunnels → Create a tunnel** → เลือก **Cloudflared** → ตั้งชื่อ เช่น `smart-factory` → ในหน้าคำสั่งติดตั้ง คัดลอกเฉพาะ **token** (ข้อความยาวๆ หลัง `--token`) ไม่ต้องรันคำสั่งนั้น
+2. ใส่ token ใน `server/.env`:
+   ```
+   CLOUDFLARE_TUNNEL_TOKEN=eyJhIjoi...
+   ```
+3. **Public Hostnames** ของ tunnel → Add a public hostname 2 อัน:
+
+   | Subdomain | Domain | Service Type | URL |
+   |---|---|---|---|
+   | `oee` | `<domain>` | HTTP | `web:80` |
+   | `grafana` | `<domain>` | HTTP | `grafana:3000` |
+
+4. เปิด tunnel (ในโฟลเดอร์ `OEE-System/server`):
+   ```bash
+   docker compose --profile tunnel up -d
+   docker compose logs cloudflared        # ต้องเห็น Registered tunnel connection
+   ```
+5. **ล็อกให้เฉพาะคนในทีม (แนะนำมาก):** **Access → Applications → Add an application → Self-hosted** → Application domain `oee.<domain>` (ทำซ้ำกับ `grafana.<domain>`) → Policy: Action **Allow**, Include **Emails** = อีเมลของคนในทีม → คนที่เปิดเว็บต้องใส่อีเมลแล้วรับรหัสทางอีเมลก่อนเข้า
+6. เปิด `https://oee.<domain>` → Board via **MQTT** → ช่อง broker จะเป็น `wss://oee.<domain>/mqtt` ให้เอง → user `web` + `MQTT_WEB_PASS` → **Connect**
+
+- Board via **Wi-Fi** ใช้ไม่ได้จากหน้า https (เบราว์เซอร์ไม่ยอมให้หน้า https ดึงข้อมูลจาก http) — ใช้ MQTT แทน
+- ปิด tunnel: `docker compose --profile tunnel stop cloudflared`
+
+---
+
 ## ใช้งานประจำวัน (ในโฟลเดอร์ `OEE-System/server`)
 
 ```bash
@@ -264,6 +314,9 @@ git pull && docker compose up -d   # อัปเดตโค้ดล่าส�
 | `telegraf` ต่อ MQTT ไม่ได้ | `MQTT_PASS` ไม่ตรง | `MQTT_PASS` ต้องเท่ากับ `MQTT_WEB_PASS` |
 | `docker compose logs sheets-sync` ขึ้น failed | ไม่มีอินเทอร์เน็ต / Apps Script | ตรวจเน็ต · Apps Script ต้อง Deploy เป็น Who has access: Anyone · ไม่ใช้ชีตให้เว้น `SHEETS_URL=` ว่าง |
 | หน้าเว็บขึ้น `receiving` แต่ไม่มีข้อมูล | บอร์ดไม่ได้ส่งมาเครื่องนี้ | ทำขั้นตอนที่ 6 ให้ครบ |
+| `https://oee.<domain>` ขึ้น 502 / 1033 | tunnel ไม่ได้เปิด / hostname ผิด | `docker compose --profile tunnel up -d` · URL ต้องเป็น `web:80` ไม่ใช่ `localhost:8080` |
+| หน้า https ต่อ MQTT ไม่ได้ | broker ผิด | ต้องเป็น `wss://oee.<domain>/mqtt` (ลบค่าเก่าในช่อง broker) |
+| แก้หน้าเว็บแล้วแต่หน้าจากบอร์ดไม่เปลี่ยน | ยังไม่ได้สร้าง `web_files.h` ใหม่ | `python3 esp32/build_web.py` แล้วอัปโหลดบอร์ด |
 
 ---
 

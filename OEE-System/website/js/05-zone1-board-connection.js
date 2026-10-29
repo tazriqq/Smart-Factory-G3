@@ -113,8 +113,9 @@ window.__board = (() => {
 window.__gate = (i) => window.__board.gate(i);
 const remember = { get(k) { try { return localStorage.getItem(k); } catch { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch {} } };
 if (remember.get("cnc-knob-source") in NAMES) sourceSel.value = remember.get("cnc-knob-source");
-// default broker: Mosquitto on the server that serves this page (or the server computer when opened as a file)
-mqttUrl.value = remember.get("cnc-mqtt-url") || `ws://${location.hostname || "192.168.1.107"}:9001`;
+// default broker: Mosquitto on the server that serves this page (or the server computer when opened as a file);
+// over https (the Cloudflare tunnel) nginx passes /mqtt on to it
+mqttUrl.value = remember.get("cnc-mqtt-url") || (location.protocol === "https:" ? `wss://${location.host}/mqtt` : `ws://${location.hostname || "192.168.1.107"}:9001`);
 if (remember.get("cnc-mqtt-topic")) mqttTopic.value = remember.get("cnc-mqtt-topic");
 if (remember.get("cnc-mqtt-user")) mqttUser.value = remember.get("cnc-mqtt-user");
 if (remember.get("cnc-mqtt-pass")) mqttPass.value = remember.get("cnc-mqtt-pass");
@@ -290,4 +291,12 @@ button.addEventListener("click", async () => {
   }
 });
 syncSource();
+// opened from the board itself (http://<board>/, see esp32/build_web.py): it answers /data, so read it over Wi-Fi at once
+if (location.protocol === "http:") {
+  fetch("/data", { cache: "no-store" }).then((r) => (r.ok ? r.text() : "")).then((t) => {
+    if (!t.trim().startsWith("{") || conn) return;
+    sourceSel.value = "wifi"; addrInput.value = location.host; syncSource();
+    button.click();
+  }).catch(() => {});
+}
 })();
