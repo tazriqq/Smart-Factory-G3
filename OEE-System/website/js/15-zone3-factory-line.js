@@ -1156,6 +1156,12 @@ window.__line = { MACHINES, BELTS, slots, placeTags, fit, oeeOf, speedChanged() 
   setSpeed(n) { const b = document.querySelector(`.line-bar [data-speed="${n}"]`); if (b && speed !== n) b.click(); },
   reset,
   setRouteText(t) { const r = parseRoute(t); if (r) setRoute(r); },
+  // a QC press for product p (0 = A, 1 = B) from the control page: its piles, and the OEE panel's count
+  qcPress(p, kind) {
+    if (boardLive() || !qcL[p]) return;
+    qcL[p][kind === 'good' ? 'good' : 'rej']++;
+    document.querySelector(`.dash-oee button[data-part="${kind === 'good' ? 'good' : 'bad'}"]`)?.click();
+  },
   setItems(items, line) { ITEMS = { A: { ...ITEMS.A, ...(items.A || {}) }, B: { ...ITEMS.B, ...(items.B || {}) } }; if (line) LINE_ID = line; },
   setSetup(i, on) { if (!slots[i] || !!window.__setup[i] === !!on) return; window.__setup[i] = !!on; slots[i].tag.querySelector('.tg-ma').setAttribute('aria-pressed', String(!!on)); },
   toggleDoor(i) { const s = slots[i]; if (s && !boardLive() && s.door.can()) s.door.toggle(); } };

@@ -331,8 +331,16 @@ function followControl(m) {
   if (Array.isArray(m.setup)) for (let i = 0; i < 4; i++) L?.setSetup?.(i, !!m.setup[i]);
   if (m.sim) { L?.setRunning?.(m.sim.run !== 0); if (m.sim.speed) L?.setSpeed?.(m.sim.speed); }
   if (q) {
-    for (let k = 0; k < (m.good >>> 0) - (q.good >>> 0) && k < 100; k++) window.__qcPress?.("good");
-    for (let k = 0; k < (m.rej >>> 0) - (q.rej >>> 0) && k < 100; k++) window.__qcPress?.("reject");
+    // QC per product (the control page's GOOD / REJECT for A and B); what is left of the totals: the latest product
+    let pg = 0, pr = 0;
+    if (m.qc && q.qc) for (const [i, P] of [[0, "A"], [1, "B"]]) {
+      const dg = ((m.qc[P] || {}).good >>> 0) - ((q.qc[P] || {}).good >>> 0), dr = ((m.qc[P] || {}).rej >>> 0) - ((q.qc[P] || {}).rej >>> 0);
+      for (let k = 0; k < dg && k < 100; k++) L?.qcPress?.(i, "good");
+      for (let k = 0; k < dr && k < 100; k++) L?.qcPress?.(i, "rej");
+      pg += Math.max(0, dg); pr += Math.max(0, dr);
+    }
+    for (let k = 0; k < (m.good >>> 0) - (q.good >>> 0) - pg && k < 100; k++) window.__qcPress?.("good");
+    for (let k = 0; k < (m.rej >>> 0) - (q.rej >>> 0) - pr && k < 100; k++) window.__qcPress?.("reject");
     for (let k = 0; k < (m.undo >>> 0) - (q.undo >>> 0) && k < 100; k++) document.querySelector('.dash-oee button[data-part="undo"]')?.click();
     if ((m.reset >>> 0) > (q.reset >>> 0)) L?.reset?.();
   }

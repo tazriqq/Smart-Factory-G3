@@ -3,7 +3,8 @@
 # Control pages (any number, any device) send commands to <line>/control/set:
 #   {"cmd":"set","key":"pot.1","value":256,"base":7,"by":"a1b2"}   change one value; base = the version of that
 #                                                                   value the page last saw
-#   {"cmd":"press","key":"good","by":"a1b2"}                        good / rej / undo / reset: counted, never conflict
+#   {"cmd":"press","key":"good.A","by":"a1b2"}                      good.A / rej.B (QC for that product), undo, reset:
+#                                                                   counted, never conflict
 # The hub takes them in the order they reach it. A "set" whose value someone else changed after the version the
 # page saw is ignored (the first one wins); the page then shows the hub's value. After every change, and every
 # few seconds, the hub posts the whole state to <line>/control (retained): the control pages show it and the
@@ -59,6 +60,7 @@ state = {
     "sim": {"run": 1, "speed": 4}, "route": "1234-", "useBoard": 1,
     "good": 0, "rej": 0, "undo": 0, "reset": 0,
     "items": {"A": {"code": "", "name": ""}, "B": {"code": "", "name": ""}}, "line": LINE_ID,
+    "qc": {"A": {"good": 0, "rej": 0}, "B": {"good": 0, "rej": 0}},   # QC presses per product (good / rej = all)
     "id": "".join(random.choices(string.ascii_lowercase + string.digits, k=8)),
 }
 ver = {"n": 0, "kv": {}, "by": {}}   # version counter, version and author of each value
@@ -110,10 +112,17 @@ def put(key, value):
 def on_command(m):
     global dirty
     by = str(m.get("by", ""))[:16]
-    if m.get("cmd") == "press" and m.get("key") in ("good", "rej", "undo", "reset"):
-        state[m["key"]] += 1
-        outbox.append({"machine": 0, "event": PRESS_EVENT[m["key"]]})
-        dirty = True
+    if m.get("cmd") == "press":
+        k, _, p = str(m.get("key", "")).partition(".")
+        if k in ("good", "rej") and p in ("A", "B"):
+            state["qc"][p][k] += 1
+            state[k] += 1
+            outbox.append({"machine": 0, "event": PRESS_EVENT[k], "product": p})
+            dirty = True
+        elif k in ("good", "rej", "undo", "reset") and not p:
+            state[k] += 1
+            outbox.append({"machine": 0, "event": PRESS_EVENT[k]})
+            dirty = True
         return
     if m.get("cmd") != "set":
         return
@@ -243,6 +252,12 @@ def on_message(client, _userdata, msg):
                 state[k] = m[k]
         if isinstance(m.get("sim"), dict):
             state["sim"].update({k: v for k, v in m["sim"].items() if valid("sim." + k, v) is not None})
+        if isinstance(m.get("qc"), dict):
+            for p in ("A", "B"):
+                for k in ("good", "rej"):
+                    v = (m["qc"].get(p) or {}).get(k)
+                    if isinstance(v, int) and v >= 0:
+                        state["qc"][p][k] = v
         if isinstance(m.get("items"), dict):
             for p in ("A", "B"):
                 for f in ("code", "name"):

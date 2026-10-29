@@ -177,7 +177,8 @@ Windows `ipconfig` · Mac `ipconfig getifaddr en0` · Linux `hostname -I` แล
 | **NOT LOGGED IN** | ไม่เปลี่ยน |
 
 - ค่าเริ่มต้นคือ *Connect board*: บอร์ดหลุดจะใช้ตัวจำลองเอง และเมื่อบอร์ดกลับมาก็กลับไปใช้บอร์ด
-- **ตัวจำลอง** มี: ปุ่มหมุนความเร็ว (0–200%), RUN / STOP, เปิด / ปิดฝา, Set / Maintenance, Alarm, GOOD / REJECT / Undo และไลน์จำลอง (Pause, 1× / 4× / 10×, Reset)
+- **ตัวจำลอง** มี: ปุ่มหมุนความเร็ว (0–200%), RUN / STOP, เปิด / ปิดฝา, Set / Maintenance, Alarm, Undo และไลน์จำลอง (Pause, 1× / 4× / 10×, Reset)
+- **QC · ของดี / ของเสีย ต่อ product:** ทุกเส้นทางผลิต (A / B ที่มีเครื่อง) มีปุ่ม **✓ GOOD** / **✕ REJECT** ของตัวเอง พร้อม good · scrap · yield แยกกัน · บันทึกเป็น event `good` / `reject` พร้อม product · ปุ่ม 2 ปุ่มบน**บอร์ดจริง**ยังนับให้ product ที่มีชิ้นงานออกล่าสุด (โหมด MONITOR แสดงตัวนับแยกตาม product ของบอร์ด)
 
 ### 4.3 หลายเครื่องพร้อมกัน
 - **ค่าจริงอยู่ที่ server ที่เดียว** (`control-hub`) เปิดหน้า control กี่เครื่องก็ได้ ทุกเครื่องเห็นค่าเดียวกันแบบ real time (เลื่อน slider บนโทรศัพท์ slider บน PC ก็ขยับตาม) และช่อง Events ขึ้น `… · from another device`

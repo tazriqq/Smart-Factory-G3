@@ -152,6 +152,16 @@ input[type=range]{width:100%;margin:6px 0;accent-color:var(--strong)}
 .qc .btn.ctl{margin-top:10px;width:100%;padding:12px}
 .qc .good .btn{color:var(--green)}.qc .rej .btn{color:var(--red)}
 .qc .undo{margin-top:6px;width:100%;padding:6px;font-size:12px;color:var(--muted)}
+.qcp .undo{padding:4px 10px;font-size:12px;color:var(--muted)}
+.qcp-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;padding:10px 0;border-top:1px solid var(--faint)}
+.qcp-row:first-child{border-top:0}
+.qcp-row .who{display:flex;align-items:center;gap:8px;min-width:0;flex:1 1 220px}
+.qcp-row .who b{font:600 13px var(--mono);color:var(--strong);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.qcp-row .who em{font:12px var(--mono);font-style:normal;color:var(--muted)}
+.qcp-row .n{font:12px var(--mono);color:var(--muted);white-space:nowrap}
+.qcp-row .n b{font-size:16px;color:var(--strong)}.qcp-row .n .g{color:var(--green)}.qcp-row .n .r{color:var(--red)}
+.qcp-row .btn.qg{color:var(--green);padding:10px 16px}.qcp-row .btn.qr{color:var(--red);padding:10px 16px}
+@media (max-width:620px){.qcp-row .btn.qg,.qcp-row .btn.qr{flex:1}}
 
 /* logs */
 .logs{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px}
@@ -305,11 +315,16 @@ main>*{min-width:0}
   <section class="machines" id="machines" aria-label="Machines"></section>
 
   <section class="qc" aria-label="Quality check">
-    <div class="card good"><div class="k">QC · Good</div><div class="count"><b id="q-good">—</b><span>presses</span></div>
-      <button class="btn ctl" id="q-good-btn" type="button">✓ GOOD</button><button class="btn ctl undo" id="q-undo-btn" type="button">↶ Undo last QC</button><div class="pins">GPIO 16 · tactile</div></div>
-    <div class="card rej"><div class="k">QC · Reject</div><div class="count"><b id="q-rej">—</b><span>presses</span></div>
-      <button class="btn ctl" id="q-rej-btn" type="button">✕ REJECT</button><div class="pins">GPIO 4 · tactile</div></div>
+    <div class="card good"><div class="k">QC · Good · รวม</div><div class="count"><b id="q-good">—</b><span>presses</span></div>
+      <div class="pins">บอร์ด: GPIO 16 · นับให้ product ที่มีชิ้นงานออกล่าสุด</div></div>
+    <div class="card rej"><div class="k">QC · Reject · รวม</div><div class="count"><b id="q-rej">—</b><span>presses</span></div>
+      <div class="pins">บอร์ด: GPIO 4 · นับให้ product ที่มีชิ้นงานออกล่าสุด</div></div>
     <div class="card"><div class="k">All parts · line</div><div class="count"><b id="q-all">—</b><span class="mon">finished by 4 machines</span><span class="ctl">made on the dashboard</span></div><div class="pins" id="q-yield">yield —</div></div>
+  </section>
+
+  <section class="card qcp" aria-label="QC per product">
+    <div class="log-h"><span class="k">QC · ของดี / ของเสีย · ต่อ product</span><span class="grow"></span><button class="btn ctl undo" id="q-undo-btn" type="button">↶ Undo last QC</button></div>
+    <div id="qcp-rows"></div>
   </section>
 
   <section class="card" aria-label="What each button does">
@@ -499,7 +514,8 @@ function onBoard(text) {
 const ME = Math.random().toString(36).slice(2, 10);
 const ctl = { pot: [512, 512, 512, 512], run: [1, 1, 1, 1], door: [0, 0, 0, 0], al: 0, good: 0, rej: 0, undo: 0, reset: 0,
   setup: [0, 0, 0, 0], sim: { run: 1, speed: 4 }, route: "1234-", useBoard: 1,
-  items: { A: { code: "", name: "" }, B: { code: "", name: "" } } };   // what this page shows
+  items: { A: { code: "", name: "" }, B: { code: "", name: "" } },
+  qc: { A: { good: 0, rej: 0 }, B: { good: 0, rej: 0 } } };   // what this page shows
 let S = null, dragging = -1, sendTimer = 0;   // S: the hub's state as last received
 const sent = {};                              // values sent but not yet back from the hub
 const KEYS = () => [0, 1, 2, 3].flatMap((i) => ["pot", "run", "door", "setup"].map((k) => [`${k}.${i}`, ctl[k][i], S[k][i]]))
@@ -526,7 +542,7 @@ function sendCtl(note, cls) {
   }, 80);
 }
 // QC good / reject, undo, reset: counted on the hub, never in conflict
-function press(key) { ctl[key]++; command({ cmd: "press", key }); }
+function press(key) { const k = key.split(".")[0]; if (typeof ctl[k] === "number") ctl[k]++; command({ cmd: "press", key }); }
 // a change made on another device: the same line in this page's Events
 function logOther(a, b) {
   const from = " · from another device";
@@ -548,7 +564,7 @@ function onState(text) {
   if (!m.hub || !Array.isArray(m.pot)) return;
   if (m.last && m.last.by === ME && !m.last.ok && (!S || S.ms !== m.ms)) event(`ignored: someone else changed ${m.last.key} first`, "r");
   if (S && m.last && m.last.by !== ME && m.last.ok) logOther(S, m);
-  if (S) for (const [k, t, c] of [["good", "QC good", "g"], ["rej", "QC reject", "r"], ["undo", "QC undo last", "n"], ["reset", "line reset", "r"]])
+  if (S) for (const [k, t, c] of [["undo", "QC undo last", "n"], ["reset", "line reset", "r"]])
     if (m[k] > ctl[k]) event(`${t}${k === "good" || k === "rej" ? " → " + m[k] : ""} · from another device`, c);
   S = m;
   for (const k of ["run", "door", "setup"]) ctl[k] = m[k].slice();
@@ -561,6 +577,11 @@ function onState(text) {
     if (document.activeElement !== box) ctl.items[p][f] = ((m.items || {})[p] || {})[f] || "";
   }
   if (m.line) $("rt-line").textContent = m.line;
+  if (m.qc) {
+    if (S && S.qc) for (const P of ["A", "B"]) for (const [k, t, c] of [["good", "QC good", "g"], ["rej", "QC reject", "r"]])
+      if ((m.qc[P] || {})[k] > ctl.qc[P][k]) event(`${t} · product ${P} · from another device`, c);
+    ctl.qc = { A: { ...m.qc.A }, B: { ...m.qc.B } };
+  }
   if (S && m.items && JSON.stringify(S.items) !== JSON.stringify(m.items) && m.last && m.last.by !== ME && m.last.ok)
     event(`product names changed · from another device`, "b");
   for (const k in sent) delete sent[k];
@@ -592,8 +613,30 @@ cards.forEach((c, i) => {
   c.slider.addEventListener("change", () => { dragging = -1; event(`M${i + 1} speed ${c.slider.value} %`, "n"); });
 });
 $("al-btn").addEventListener("click", () => { ctl.al = ctl.al ? 0 : 1; sendCtl(ctl.al ? "ALARM ON" : "alarm cleared", ctl.al ? "r" : "g"); });
-$("q-good-btn").addEventListener("click", () => { press("good"); bump($("q-good")); sendCtl(`QC good → ${ctl.good}`, "g"); });
-$("q-rej-btn").addEventListener("click", () => { press("rej"); bump($("q-rej")); sendCtl(`QC reject → ${ctl.rej}`, "r"); });
+// QC per product: a GOOD / REJECT pair for each product that has machines on its route
+$("qcp-rows").innerHTML = ["A", "B"].map((P) => `<div class="qcp-row" data-p="${P}">
+  <span class="who"><i class="rp${P === "B" ? " b" : ""}">${P}</i><b data-q="name"></b><em data-q="route"></em></span>
+  <span class="n">good <b class="g" data-q="good">0</b> · scrap <b class="r" data-q="rej">0</b> · yield <span data-q="yield">—</span></span>
+  <button class="btn ctl qg" type="button">✓ GOOD</button><button class="btn ctl qr" type="button">✕ REJECT</button></div>`).join("");
+document.querySelectorAll(".qcp-row").forEach((row) => {
+  const P = row.dataset.p;
+  row.querySelector(".qg").addEventListener("click", () => { press("good." + P); ctl.qc[P].good++; renderQcp(); sendCtl(`QC good · product ${P}`, "g"); });
+  row.querySelector(".qr").addEventListener("click", () => { press("rej." + P); ctl.qc[P].rej++; renderQcp(); sendCtl(`QC reject · product ${P}`, "r"); });
+});
+// counts: the hub's (simulator) or the board's own split (monitor: qg / qr since its power-on or route change)
+function renderQcp() {
+  const r = parseRoute(liveRoute()) || [[0, 1, 2, 3], []], board = mode() === "monitor" && prev;
+  document.querySelectorAll(".qcp-row").forEach((row, p) => {
+    const P = row.dataset.p, it = ctl.items[P] || {};
+    row.hidden = !r[p].length;
+    const g = board ? (prev.qg || [])[p] >>> 0 : ctl.qc[P].good, x = board ? (prev.qr || [])[p] >>> 0 : ctl.qc[P].rej;
+    const set = (k, v) => { const e = row.querySelector(`[data-q="${k}"]`); if (e.textContent !== String(v)) e.textContent = v; };
+    set("name", [it.code, it.name].filter(Boolean).join(" ") || "product " + P);
+    set("route", r[p].map((i) => MACHINES[i].no).join(" → "));
+    set("good", g); set("rej", x); set("yield", g + x ? Math.round((g / (g + x)) * 100) + " %" : "—");
+  });
+}
+setInterval(renderQcp, 500);
 $("q-undo-btn").addEventListener("click", () => { press("undo"); sendCtl("QC undo last", "n"); });
 $("sim-run").addEventListener("click", () => { ctl.sim.run = ctl.sim.run ? 0 : 1; sendCtl(ctl.sim.run ? "line running" : "line paused", "n"); });
 document.querySelectorAll(".sim [data-speed]").forEach((b) => b.addEventListener("click", () => { ctl.sim.speed = +b.dataset.speed; sendCtl(`time speed ${ctl.sim.speed}×`, "n"); }));
