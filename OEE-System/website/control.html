@@ -70,7 +70,17 @@ button,input{font:inherit}
 .route i.b{background:var(--pb)}
 body[data-mode="monitor"] .ctl{display:none!important}
 body:not([data-mode="off"]) :is(#url,#user,#pass,.login){display:none!important}
-body:not([data-mode="off"]) #go{padding:4px 10px;font-size:12px}
+body:not([data-mode="off"]) #go,#share{padding:4px 10px;font-size:12px}
+/* share login: a QR code (and the link) another device opens to be logged in at once */
+.share-bg{position:fixed;inset:0;z-index:50;display:grid;place-items:center;padding:16px;background:#0008}
+.share-bg[hidden]{display:none}
+.share{width:min(380px,100%);display:grid;gap:10px;justify-items:center;padding:18px;border-radius:12px;background:var(--card);box-shadow:var(--shadow);text-align:center}
+.share h2{margin:0;font-size:16px;color:var(--strong)}
+.share .qr{background:#fff;padding:6px;border-radius:8px;line-height:0}
+.share .qr svg{width:min(300px,70vw);height:auto}
+.share textarea{width:100%;height:70px;resize:none;font:11px var(--mono);color:var(--strong);background:var(--page);border:0;border-radius:7px;padding:8px;box-shadow:inset 0 0 0 1px var(--line);word-break:break-all}
+.share .warn{font-size:12px;color:var(--red)}
+.share .row2{display:flex;gap:8px;width:100%}.share .row2 .btn{flex:1}
 body:not([data-mode="monitor"]) .mon{display:none!important}
 
 /* alarm */
@@ -221,6 +231,16 @@ main>*{min-width:0}
 </style>
 </head>
 <body data-mode="off">
+<div class="share-bg" id="share-bg" hidden>
+  <div class="share" role="dialog" aria-modal="true" aria-labelledby="share-h">
+    <h2 id="share-h">Log in on another device</h2>
+    <p class="hint" style="margin:0">สแกนด้วยกล้องโทรศัพท์ หรือคัดลอกลิงก์ไปเปิด · เปิดแล้ว login ให้เอง ไม่ต้องพิมพ์รหัส</p>
+    <div class="qr" id="share-qr"></div>
+    <textarea id="share-link" readonly aria-label="Login link"></textarea>
+    <div class="row2"><button class="btn" id="share-copy" type="button">Copy link</button><button class="btn" id="share-close" type="button">Close</button></div>
+    <p class="warn">ลิงก์ / QR นี้มีรหัสอยู่ ใครได้ไปก็คุมไลน์ได้ · ให้เฉพาะคนในทีม อย่าส่งในกลุ่มสาธารณะ</p>
+  </div>
+</div>
 <main>
   <header>
     <div>
@@ -236,6 +256,7 @@ main>*{min-width:0}
       <input class="in" id="user" type="text" value="web" spellcheck="false" autocomplete="off" aria-label="MQTT user">
       <input class="in" id="pass" type="password" placeholder="password" autocomplete="off" aria-label="MQTT password">
       <button class="btn" id="go" type="button">Log in</button>
+      <button class="btn" id="share" type="button" hidden>📱 Share login (QR)</button>
       <span class="grow"></span>
       <span class="pill" id="pill" data-s="off" role="status"><i></i><span>Not connected</span></span>
     </div>
@@ -333,6 +354,7 @@ main>*{min-width:0}
   </section>
 </main>
 
+<script src="js/qr.js"></script>
 <script>
 "use strict";
 // pins as wired on the board (esp32/SmartFactoryBoard_MQTT/SmartFactoryBoard_MQTT.ino)
@@ -630,6 +652,7 @@ function setMode() {
   const m = mode(), seen = boardSeen();
   const b = $("use-board");
   b.hidden = m === "off";
+  $("share").hidden = !(client && client.connected) || !/^https?:$/.test(location.protocol);
   b.textContent = ctl.useBoard ? "Disconnect board · ใช้ตัวจำลอง" : "Connect board";
   b.disabled = !ctl.useBoard && !seen;
   b.title = !ctl.useBoard && !seen ? "ยังไม่เจอบอร์ด: เปิดบอร์ดและต่อ Wi-Fi ก่อน" : "";
@@ -659,6 +682,17 @@ setInterval(() => {
 let client = null, topics = null;
 function pill(s, text) { $("pill").dataset.s = s; $("pill").lastChild.textContent = text; }
 const BASE = "group3/dpx/line1";
+// opened from a shared login link (#login=…, see Share login): keep the login, then take it out of the address bar.
+// The part after # never goes to the server or Cloudflare.
+(() => {
+  const h = location.hash.match(/^#login=([A-Za-z0-9_-]+)$/);
+  if (!h) return;
+  try {
+    const c = JSON.parse(decodeURIComponent(escape(atob(h[1].replace(/-/g, "+").replace(/_/g, "/")))));
+    if (c && c.p) { remember.set("cnc-mqtt-user", c.u || "web"); remember.set("cnc-mqtt-pass", c.p); try { localStorage.removeItem("cnc-mqtt-url"); } catch {} }
+  } catch {}
+  history.replaceState(null, "", location.pathname + location.search);
+})();
 $("url").value = remember.get("cnc-mqtt-url") || (location.protocol === "https:" ? `wss://${location.host}/mqtt` : `ws://${location.hostname || "192.168.1.107"}:9001`);
 $("user").value = remember.get("cnc-mqtt-user") || "web";
 $("pass").value = remember.get("cnc-mqtt-pass") || "";
@@ -698,6 +732,28 @@ async function connect() {
   client.on("error", (e) => { pill("err", "MQTT: " + (e && e.message ? e.message : e)); if (/auth|not authorized/i.test(String(e && e.message))) { client.end(true); client = null; $("go").textContent = "Log in"; } });
 }
 $("go").addEventListener("click", connect);
+// share login: a link to this page with the login after #, shown as a QR code and as text
+function shareLink() {
+  const json = JSON.stringify({ u: $("user").value.trim() || "web", p: $("pass").value });
+  const b64 = btoa(unescape(encodeURIComponent(json))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  return location.origin + location.pathname + "#login=" + b64;
+}
+$("share").addEventListener("click", () => {
+  const link = shareLink();
+  $("share-qr").innerHTML = window.QR ? QR.svg(link, 5) : "";
+  $("share-link").value = link;
+  $("share-copy").textContent = "Copy link";
+  $("share-bg").hidden = false;
+});
+$("share-copy").addEventListener("click", async () => {
+  const t = $("share-link");
+  try { await navigator.clipboard.writeText(t.value); } catch { t.select(); document.execCommand("copy"); }
+  $("share-copy").textContent = "Copied ✓";
+});
+const closeShare = () => { $("share-bg").hidden = true; $("share-qr").innerHTML = ""; $("share-link").value = ""; };
+$("share-close").addEventListener("click", closeShare);
+$("share-bg").addEventListener("click", (e) => { if (e.target === e.currentTarget) closeShare(); });
+addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("share-bg").hidden) closeShare(); });
 $("pass").addEventListener("keydown", (e) => { if (e.key === "Enter" && !client) connect(); });
 $("ev-clear").addEventListener("click", () => { $("events").innerHTML = ""; });
 $("raw-pause").addEventListener("click", (e) => { rawPaused = !rawPaused; e.target.setAttribute("aria-pressed", String(rawPaused)); e.target.textContent = rawPaused ? "Resume" : "Pause"; });

@@ -297,6 +297,7 @@ docker compose start telegraf sheets-sync
 | **SIMULATOR · CONTROL VIA WEBSITE** — กด *Disconnect board* หรือไม่เจอบอร์ด: หน้านี้เป็นบอร์ดจำลอง (ปุ่มหมุน, RUN / STOP, ฝา, Set / Maintenance, Alarm, GOOD / REJECT / Undo, ไลน์จำลอง) | ใช้ตัวจำลองจากหน้า control แม้บอร์ดจะเปิดอยู่ · **Live · control via website** |
 | **NOT LOGGED IN** — ยังไม่ใส่รหัส: กดเตรียมค่าไว้ได้ แต่ยังไม่ส่ง | ไม่เปลี่ยน |
 
+- **login เครื่องอื่นด้วย QR:** บนเครื่องที่ login แล้ว กด **📱 Share login (QR)** → สแกนด้วยกล้องโทรศัพท์ (หรือ Copy link ไปเปิด) → เครื่องนั้น login ให้เอง · รหัสอยู่หลัง `#` ในลิงก์ (ไม่ถูกส่งไป server / Cloudflare และถูกลบออกจากแถบ URL ทันที) · ใครได้ลิงก์ไปก็คุมไลน์ได้ ให้เฉพาะคนในทีม
 - **ค่าจริงอยู่ที่ server ที่เดียว** (`control-hub` ใน docker compose): เปิดหน้า control กี่เครื่องก็ได้ ทุกเครื่องเห็นค่าเดียวกันแบบ real time · หน้า control ส่งแค่คำสั่ง ถ้าค่าเดียวกันถูกคนอื่นเปลี่ยนก่อน คำสั่งที่มาถึง server ทีหลังจะถูก **ignore** (ขึ้น `ignored: someone else changed … first` ในช่อง Events) · GOOD / REJECT / Undo / Reset นับทุกครั้ง
 - **หน้า control เป็นตัวตัดสิน** ว่า dashboard ทุกจอใช้ข้อมูลจากบอร์ดหรือจากตัวจำลอง (ปุ่ม *Connect board* / *Disconnect board* บนแถบสถานะ) · บอร์ดจริงยังบันทึกลง database ตามปกติไม่ว่าจะเลือกแบบไหน
 
