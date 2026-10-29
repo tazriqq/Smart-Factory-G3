@@ -149,6 +149,7 @@ services:
         condition: service_healthy
       mosquitto:
         condition: service_started
+        restart: true   # Telegraf doesn't always get back on after the broker restarts: restart it too
     volumes:
       - ./telegraf/telegraf.conf:/etc/telegraf/telegraf.conf:ro
     environment:

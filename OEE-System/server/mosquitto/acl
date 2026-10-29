@@ -18,3 +18,5 @@ user hub
 topic read group3/dpx/#
 topic write group3/dpx/+/control
 topic write group3/dpx/+/control/pair/+
+# ...and log the control pages' presses as events, marked "source":"website"
+topic write group3/dpx/+/events

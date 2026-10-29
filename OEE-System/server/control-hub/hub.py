@@ -12,6 +12,10 @@
 # src in the state tells every page what to follow: "board" when useBoard is on and the board is sending,
 # otherwise "sim" (the control pages' simulator).
 #
+# Every accepted press / switch is also posted to <line>/events with "source":"website", so the database and the
+# Google Sheet show what was done on the control pages next to what was done on the board (source empty = board).
+# The OEE numbers in the database count the board's rows only.
+#
 # Pairing (log another device in): a logged-in control page posts {"by":"a1b2"} to <line>/control/pair; the hub
 # answers on <line>/control/pair/a1b2 with a 5-character code. GET /pair/<code> (nginx passes it on) gives that
 # device the web login once: a code works a single time, for PAIR_TTL_S seconds, and wrong guesses get blocked.
@@ -33,7 +37,10 @@ USER = os.environ["MQTT_USER"]
 PASS = os.environ["MQTT_PASS"]
 BASE = os.environ.get("LINE_TOPIC", "group3/dpx/line1")
 T_STATE, T_SET, T_BOARD = BASE + "/control", BASE + "/control/set", BASE + "/board"
-T_PAIR = BASE + "/control/pair"
+T_PAIR, T_EVENTS = BASE + "/control/pair", BASE + "/events"
+PRESS_EVENT = {"good": "good", "rej": "reject", "undo": "undo", "reset": "reset"}
+SWITCH_EVENT = {"run": ("run_on", "run_off"), "door": ("door_open", "door_close"), "setup": ("setup_on", "setup_off")}
+outbox = []   # event rows to post (on_command runs inside the MQTT callback)
 WEB_USER, WEB_PASS = "web", os.environ.get("MQTT_WEB_PASS", "")
 PAIR_TTL_S, PAIR_HTTP_PORT = 600, 8090
 PAIR_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"   # no 0/O, 1/I: easy to read and to type
@@ -90,6 +97,7 @@ def on_command(m):
     by = str(m.get("by", ""))[:16]
     if m.get("cmd") == "press" and m.get("key") in ("good", "rej", "undo", "reset"):
         state[m["key"]] += 1
+        outbox.append({"machine": 0, "event": PRESS_EVENT[m["key"]]})
         dirty = True
         return
     if m.get("cmd") != "set":
@@ -106,7 +114,20 @@ def on_command(m):
         return
     ver["n"] += 1
     ver["kv"][key], ver["by"][key] = ver["n"], by
+    name, _, idx = key.partition(".")
+    before = state[name][int(idx)] if name in ("pot", "run", "door", "setup") else state["sim"][idx] if name == "sim" else state[key]
     put(key, value)
+    if before != value:
+        if name in SWITCH_EVENT:
+            outbox.append({"machine": int(idx) + 1, "event": SWITCH_EVENT[name][0 if value else 1]})
+        elif key == "al":
+            outbox.append({"machine": 0, "event": "alarm_on" if value else "alarm_off"})
+        elif key == "route":
+            outbox.append({"machine": 0, "event": "route", "route": value})
+        elif key == "useBoard":
+            outbox.append({"machine": 0, "event": "use_board" if value else "use_simulator"})
+        elif key == "sim.run":
+            outbox.append({"machine": 0, "event": "sim_run" if value else "sim_pause"})
     state["last"] = {"key": key, "by": by, "ok": 1}
     dirty = True
 
@@ -229,6 +250,9 @@ def main():
             restored = True
         if not restored:
             continue
+        while outbox:
+            row = outbox.pop(0)
+            client.publish(T_EVENTS, json.dumps({**row, "source": "website", "age_ms": 0}), qos=1)
         s = src()
         if dirty or s != last_src or now - last_pub > KEEPALIVE_S:
             publish(client)

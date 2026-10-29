@@ -46,7 +46,8 @@ TABS = {
     "Machines": "SELECT line, machine, name, ideal_cycle_s FROM machines ORDER BY line, machine",
     "Events": f"""
         SELECT to_char(e.time, '{STAMP}') AS time, e.line, e.machine,
-               CASE WHEN e.machine = 0 THEN 'whole line' ELSE m.name END AS name, e.event, e.product, e.route
+               CASE WHEN e.machine = 0 THEN 'whole line' ELSE m.name END AS name, e.event, e.product, e.route,
+               coalesce(e.source, 'board') AS source
         FROM events e LEFT JOIN machines m ON m.line = e.line AND m.machine = e.machine
         ORDER BY e.time DESC LIMIT %s""",
 }

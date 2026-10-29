@@ -190,7 +190,7 @@ OEE-System/
 ทุกแท็บมีไม่เกิน `SHEETS_MAX_ROWS` แถว (ค่าเริ่มต้น 1000 ใน `server/.env`) — เก็บแถวใหม่สุด ของเก่าหลุดออก (first in, first out) ชีตจึงเล็กตลอด (ไม่ถึง 1 MB) ข้อมูลทั้งหมดยังอยู่ใน database
 | แท็บ | มาจาก |
 |---|---|
-| Events | กดปุ่ม / สวิตช์ 500 ครั้งล่าสุด (ใหม่สุดอยู่บน) — ขึ้นชีตภายใน ~10 วินาทีหลังกด (`SHEETS_EVENTS_ROWS`, `SHEETS_EVENTS_GAP_S`) |
+| Events | กดปุ่ม / สวิตช์ 500 ครั้งล่าสุด (ใหม่สุดอยู่บน) · คอลัมน์ `source` = `board` (กดบนบอร์ด) หรือ `website` (กดบนหน้า control; OEE คิดจากบอร์ดอย่างเดียว) — ขึ้นชีตภายใน ~10 วินาทีหลังกด (`SHEETS_EVENTS_ROWS`, `SHEETS_EVENTS_GAP_S`) |
 | OEE_Daily | view `oee_daily` ทั้งหมด |
 | OEE_Hourly | `oee('1 hour')` ย้อนหลัง 14 วัน (`SHEETS_HOURLY_DAYS`) |
 | Products | view `product_daily` ทั้งหมด (ต้องใช้ `sheets_webapp.gs` ตัวใหม่) |
