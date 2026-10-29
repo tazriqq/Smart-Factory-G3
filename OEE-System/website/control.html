@@ -67,8 +67,8 @@ button,input{font:inherit}
 .route{margin-left:auto;font:12px var(--mono);color:var(--muted)}
 .route i{display:inline-grid;place-items:center;min-width:16px;height:16px;padding:0 4px;margin:0 4px 0 8px;font:600 10px var(--mono);font-style:normal;color:#fff;background:var(--pa)}
 .route i.b{background:var(--pb)}
-body:not([data-mode="control"]) .ctl{display:none!important}
-body[data-mode="control"] .mon{display:none!important}
+body[data-mode="monitor"] .ctl{display:none!important}
+body:not([data-mode="monitor"]) .mon{display:none!important}
 
 /* alarm */
 .alarm{display:flex;align-items:center;gap:12px;padding:12px 16px;border-radius:10px;background:var(--card);box-shadow:var(--shadow)}
@@ -139,7 +139,7 @@ input[type=range]{width:100%;margin:6px 0;accent-color:var(--strong)}
 
 /* logs */
 .logs{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px}
-@media (max-width:820px){.logs{grid-template-columns:1fr}}
+@media (max-width:820px){.logs{grid-template-columns:minmax(0,1fr)}}
 .log-h{display:flex;align-items:center;gap:8px;margin-bottom:8px}
 .log-h .btn{padding:4px 9px;font-size:12px}
 .events,.raw{height:260px;overflow:auto;margin:0;font:12px/1.55 var(--mono);color:var(--text);background:var(--page);border-radius:7px;padding:8px 10px}
@@ -148,6 +148,34 @@ input[type=range]{width:100%;margin:6px 0;accent-color:var(--strong)}
 .events .g{color:var(--green)}.events .r{color:var(--red)}.events .b{color:var(--blue)}.events .n{color:var(--muted)}
 .raw{white-space:pre;color:var(--muted)}
 .empty{color:var(--muted)}
+
+/* the board: each input, what it is wired to and what it does */
+.bd-wrap{margin-top:10px}
+#bd{display:block;width:100%;height:auto;font-family:var(--mono)}
+#bd .pcb{fill:#1f2a24;stroke:#0f1512;stroke-width:2}
+#bd .mod{fill:#c9ccd1;stroke:#8f949b}
+#bd .mod-t{fill:#4a4f56;font-size:11px;font-weight:600}
+#bd .usb{fill:#b7bbc2;stroke:#80858c}
+#bd .btnb{fill:#e8e8e8;stroke:#999}
+#bd .btn-t{fill:#e8ece9;font-size:9px}
+#bd .pin{fill:#2d3a33;stroke:#6c7a72;stroke-width:1.2}
+#bd .pin.used{stroke:none;fill:var(--c)}
+#bd .pin.pwr{fill:#e5484d;stroke:none}#bd .pin.gnd{fill:#111;stroke:#888}
+#bd .pin-t{fill:#d7ded9;font-size:10.5px}
+#bd .pin-t.used{fill:#fff;font-weight:600}
+#bd .lead{fill:none;stroke:var(--c);stroke-width:2;stroke-linejoin:round}
+#bd .lead.on{stroke-width:3.5}
+.bd-card{height:100%;box-sizing:border-box;padding:8px 10px;border-radius:8px;background:var(--card);box-shadow:inset 3px 0 0 var(--c),0 0 0 1px var(--line);font:11px/1.45 ui-sans-serif,system-ui,sans-serif;color:var(--text);overflow:hidden}
+.bd-card b{display:block;font:600 12px var(--mono);color:var(--strong)}
+.bd-card .to{font:10.5px var(--mono);color:var(--muted)}
+.bd-card .do{color:var(--text)}
+.bd-card .ev{font:10.5px var(--mono);color:var(--blue)}
+.bd-live{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}
+.bd-live span{font:600 10px var(--mono);padding:1px 6px;border-radius:4px;background:var(--faint);color:var(--muted)}
+.bd-live span.on{background:var(--c);color:#fff}
+@media (max-width:620px){ .bd-wrap{display:none} }
+.bd-only{display:none}
+@media (min-width:621px){ .acts tr.hw{display:none} .bd-only{display:inline} }
 
 /* what each button does, and the wiring map */
 .tw{overflow-x:auto;margin-top:10px}
@@ -163,6 +191,30 @@ input[type=range]{width:100%;margin:6px 0;accent-color:var(--strong)}
 .wiring[open] summary::after{transform:rotate(180deg)}
 .wiring iframe{display:block;width:100%;height:900px;border:0;border-radius:7px;margin-top:10px;background:var(--page)}
 .wiring a{font:12px var(--mono);color:var(--blue)}
+
+/* phone */
+main>*{min-width:0}
+@media (max-width:620px){
+  body{padding:0 12px}
+  main{padding:16px 0 40px;gap:12px}
+  header a{margin-left:0}
+  #url{flex:1 1 100%}#user,#pass{flex:1 1 40%;width:auto}#go{flex:1 1 100%;padding:10px}
+  .conn .pill{order:-1;width:100%;justify-content:center}
+  .mode{padding:10px 12px}.route{margin-left:0;width:100%}
+  .alarm{flex-wrap:wrap}.alarm .pin{display:none}.alarm .btn{margin-left:auto}
+  .sim .grow{display:none}.sim .seg{flex:1}.sim .seg .btn{flex:1}
+  .rt-row .btn{min-width:0;flex:1}
+  .rt-seq{width:100%;margin:0}
+  .sw .btn{padding:12px 8px}
+  input[type=range]{height:28px}
+  .acts{min-width:0}.acts thead{display:none}
+  .acts tr{display:grid;grid-template-columns:1fr;padding:8px 0;border-bottom:1px solid var(--faint)}
+  .acts td{border:0;padding:2px 4px}
+  .acts .sec{padding:0;border:0}.acts .sec td{padding:5px 8px}
+  .logs .card:last-child{display:none}
+  .events{height:200px}
+  .wiring iframe{height:700px}
+}
 </style>
 </head>
 <body data-mode="off">
@@ -194,7 +246,7 @@ input[type=range]{width:100%;margin:6px 0;accent-color:var(--strong)}
   </section>
 
   <section class="mode" id="mode" data-m="off" aria-live="polite">
-    <b id="mode-t">NOT CONNECTED</b><span id="mode-s">ต่อ MQTT ก่อน</span>
+    <b id="mode-t">NOT CONNECTED</b><span id="mode-s">ยังไม่ได้ต่อ MQTT · กดปุ่มด้านล่างได้เลย ค่าจะส่งไป dashboard เมื่อต่อแล้ว</span>
     <span class="route" id="route"></span>
   </section>
 
@@ -231,29 +283,30 @@ input[type=range]{width:100%;margin:6px 0;accent-color:var(--strong)}
   </section>
 
   <section class="card" aria-label="What each button does">
-    <div class="k">ปุ่มแต่ละอันทำอะไร</div>
-    <p class="hint">ปุ่มบนบอร์ดใช้ตอน ESP32 online · ปุ่มบนหน้านี้ใช้ตอน ESP32 offline (คุมไลน์จำลองบน dashboard) · event = แถวที่บันทึกลง database (เฉพาะจากบอร์ด)</p>
+    <div class="k">บอร์ด ESP32 · แต่ละขาต่อกับอะไร กดแล้วเกิดอะไร</div>
+    <p class="hint">ปุ่มบนบอร์ดใช้ตอน ESP32 online · ปุ่มเดียวกันบนหน้านี้ใช้ตอน ESP32 offline (คุมไลน์จำลองบน dashboard) · <span style="color:var(--blue)">event</span> = แถวที่บันทึกลง database (เฉพาะจากบอร์ด) · ช่องสถานะในกล่องเปลี่ยนตามจริง</p>
+    <div class="bd-wrap"><svg id="bd" viewBox="0 0 1100 690" role="img" aria-label="ESP32 board: each input, what it is connected to and what it does"></svg></div>
     <div class="tw"><table class="acts">
       <thead><tr><th>ปุ่ม</th><th>บนบอร์ด</th><th>กดแล้วเกิดอะไร</th><th>event · มีผลกับ OEE</th></tr></thead>
       <tbody>
-        <tr class="sec"><td colspan="4">ต่อเครื่อง M1–M4</td></tr>
-        <tr><td>RUN / STOP</td><td class="pin">สวิตช์ 7×7 กดติด<br>ขา 25 · 26 · 27 · 14</td><td>ติด = เครื่องเดิน · ปลด = เครื่องหยุด</td><td><code>run_on</code> / <code>run_off</code> · เวลาเดิน → Availability</td></tr>
-        <tr><td>🚪 เปิดฝา / ปิดฝา</td><td class="pin">ปุ่ม 6×6 กดเด้ง<br>ขา 23 · 19 · 18 · 17</td><td>กด 1 ครั้งเปิดฝา กดอีกครั้งปิด · ฝาเปิด = เครื่องหยุด (ใส่ชิ้นงาน) · ฝาบน dashboard เลื่อนตาม</td><td><code>door_open</code> / <code>door_close</code> · ลด Availability</td></tr>
-        <tr><td>KNOB → SPEED</td><td class="pin">pot<br>ขา 32 · 33 · 34 · 35</td><td>ความเร็ว 0–200 % ทีละ 5 % · 100 % = cycle มาตรฐาน (M1 18 s · M2 30 s · M3 24 s · M4 36 s) · 200 % = เร็วขึ้น 2 เท่า · 0 % = หยุด</td><td>ไม่มี event (อยู่ใน <code>speed_pct</code> สรุปรายนาที) · Performance, 0 % ลด Availability</td></tr>
+        <tr class="sec"><td colspan="4">ต่อเครื่อง M1–M4 <span class="bd-only">· ปุ่มที่มีเฉพาะหน้านี้</span></td></tr>
+        <tr class="hw"><td>RUN / STOP</td><td class="pin">สวิตช์ 7×7 กดติด<br>ขา 25 · 26 · 27 · 14</td><td>ติด = เครื่องเดิน · ปลด = เครื่องหยุด</td><td><code>run_on</code> / <code>run_off</code> · เวลาเดิน → Availability</td></tr>
+        <tr class="hw"><td>🚪 เปิดฝา / ปิดฝา</td><td class="pin">ปุ่ม 6×6 กดเด้ง<br>ขา 23 · 19 · 18 · 17</td><td>กด 1 ครั้งเปิดฝา กดอีกครั้งปิด · ฝาเปิด = เครื่องหยุด (ใส่ชิ้นงาน) · ฝาบน dashboard เลื่อนตาม</td><td><code>door_open</code> / <code>door_close</code> · ลด Availability</td></tr>
+        <tr class="hw"><td>KNOB → SPEED</td><td class="pin">pot<br>ขา 32 · 33 · 34 · 35</td><td>ความเร็ว 0–200 % ทีละ 5 % · 100 % = cycle มาตรฐาน (M1 18 s · M2 30 s · M3 24 s · M4 36 s) · 200 % = เร็วขึ้น 2 เท่า · 0 % = หยุด</td><td>ไม่มี event (อยู่ใน <code>speed_pct</code> สรุปรายนาที) · Performance, 0 % ลด Availability</td></tr>
         <tr><td>🔧 Set / Maintenance</td><td class="pin">— (หน้านี้เท่านั้น)</td><td>เครื่องหยุดเพราะตั้งเครื่อง / ซ่อม · ไฟเหลือง ไม่นับว่าเสีย (DOWN)</td><td>ไลน์จำลองเท่านั้น</td></tr>
         <tr class="sec"><td colspan="4">ทั้งไลน์</td></tr>
-        <tr><td>Alarm / E-stop</td><td class="pin">สวิตช์ 7×7 กดติด ขา 13<br>ไฟ LED บนบอร์ด ขา 2</td><td>ทุกเครื่องหยุดทันที · ไฟ LED บนบอร์ดติด</td><td><code>alarm_on</code> / <code>alarm_off</code> · เวลานี้นับเป็น stop + alarm → ลด Availability</td></tr>
-        <tr><td>✓ GOOD</td><td class="pin">ปุ่ม 6×6 ขา 16</td><td>ตรวจแล้วดี → ย้าย 1 กล่องจากกอง QC wait ไปกอง FG ของ product ที่มีชิ้นงานออกล่าสุด</td><td><code>good</code> + product · Quality</td></tr>
-        <tr><td>✕ REJECT</td><td class="pin">ปุ่ม 6×6 ขา 4</td><td>ตรวจแล้วเสีย → ย้าย 1 กล่องไปกอง NG ของ product ที่มีชิ้นงานออกล่าสุด</td><td><code>reject</code> + product · ลด Quality</td></tr>
+        <tr class="hw"><td>Alarm / E-stop</td><td class="pin">สวิตช์ 7×7 กดติด ขา 13<br>ไฟ LED บนบอร์ด ขา 2</td><td>ทุกเครื่องหยุดทันที · ไฟ LED บนบอร์ดติด</td><td><code>alarm_on</code> / <code>alarm_off</code> · เวลานี้นับเป็น stop + alarm → ลด Availability</td></tr>
+        <tr class="hw"><td>✓ GOOD</td><td class="pin">ปุ่ม 6×6 ขา 16</td><td>ตรวจแล้วดี → ย้าย 1 กล่องจากกอง QC wait ไปกอง FG ของ product ที่มีชิ้นงานออกล่าสุด</td><td><code>good</code> + product · Quality</td></tr>
+        <tr class="hw"><td>✕ REJECT</td><td class="pin">ปุ่ม 6×6 ขา 4</td><td>ตรวจแล้วเสีย → ย้าย 1 กล่องไปกอง NG ของ product ที่มีชิ้นงานออกล่าสุด</td><td><code>reject</code> + product · ลด Quality</td></tr>
         <tr><td>↶ Undo last QC</td><td class="pin">— (หน้านี้เท่านั้น)</td><td>ยกเลิก GOOD / REJECT ครั้งล่าสุดในแผง OEE ของ dashboard</td><td>ไลน์จำลองเท่านั้น</td></tr>
         <tr><td>Products · Apply</td><td class="pin">— (หน้านี้)</td><td>เปลี่ยนเส้นทาง A / B · ESP32 online: ส่งไปที่บอร์ด (บอร์ดจำไว้) · offline: ไลน์จำลองเปลี่ยนตาม · ชิ้นงานค้างบนสายพานหายไป</td><td><code>route</code> (จากบอร์ด) · OEE แยกตาม product</td></tr>
         <tr class="sec"><td colspan="4">ไลน์จำลองบน dashboard (ESP32 offline)</td></tr>
         <tr><td>❚❚ Pause / ▶ Run line</td><td class="pin">—</td><td>หยุด / เดินเวลาของไลน์จำลอง</td><td>—</td></tr>
         <tr><td>1× · 4× · 10×</td><td class="pin">—</td><td>เร่งเวลาจำลอง (4× = 1 วินาทีจริงเท่ากับ 4 วินาทีบนไลน์)</td><td>—</td></tr>
         <tr><td>⟲ Reset line</td><td class="pin">—</td><td>ล้างตัวนับและชิ้นงานบนไลน์จำลอง (กด 2 ครั้งกันพลาด)</td><td>—</td></tr>
-        <tr class="sec"><td colspan="4">บนตัวบอร์ด ESP32</td></tr>
-        <tr><td>EN</td><td class="pin">ปุ่มบนตัวบอร์ด</td><td>รีสตาร์ตบอร์ด · ตัวนับบนบอร์ดเริ่มใหม่ แต่ใน database ไม่หาย · เส้นทาง product ยังจำไว้</td><td><code>boot</code></td></tr>
-        <tr><td>BOOT</td><td class="pin">ปุ่มบนตัวบอร์ด</td><td>ใช้ตอนอัปโหลดโค้ดเท่านั้น</td><td>—</td></tr>
+        <tr class="sec hw"><td colspan="4">บนตัวบอร์ด ESP32</td></tr>
+        <tr class="hw"><td>EN</td><td class="pin">ปุ่มบนตัวบอร์ด</td><td>รีสตาร์ตบอร์ด · ตัวนับบนบอร์ดเริ่มใหม่ แต่ใน database ไม่หาย · เส้นทาง product ยังจำไว้</td><td><code>boot</code></td></tr>
+        <tr class="hw"><td>BOOT</td><td class="pin">ปุ่มบนตัวบอร์ด</td><td>ใช้ตอนอัปโหลดโค้ดเท่านั้น</td><td>—</td></tr>
       </tbody>
     </table></div>
   </section>
@@ -400,6 +453,7 @@ function onBoard(text) {
     $("route").innerHTML = (a ? `<i>A</i>${[...a].map((n) => "0" + n).join("→")} · ${out[0] ?? 0} out` : "") + (b ? `<i class="b">B</i>${[...b].map((n) => "0" + n).join("→")} · ${out[1] ?? 0} out` : "");
   }
   if (typeof m.ms === "number") $("s-up").textContent = fmtDur(m.ms);
+  BD({ pot: hasPot ? m.pot : [512, 512, 512, 512], run: m.run, door: m.door, al: m.al, good: m.good, rej: m.rej });
   prev = m;
 }
 
@@ -437,6 +491,7 @@ function renderCtl() {
     if (ctl.setup[i] && !ctl.al) { c.state.dataset.s = "setup"; c.st.textContent = "SET / MAINTENANCE"; }
   });
   showQc(ctl.good, ctl.rej, "—");
+  if (typeof BD === "function") BD(ctl);
   $("sim-run").setAttribute("aria-pressed", String(!!ctl.sim.run)); $("sim-run").textContent = ctl.sim.run ? "❚❚ Pause line" : "▶ Run line";
   document.querySelectorAll(".sim [data-speed]").forEach((b) => b.setAttribute("aria-pressed", String(+b.dataset.speed === ctl.sim.speed)));
 }
@@ -491,7 +546,7 @@ function renderRoute() {
     row.querySelector(".rt-seq").textContent = draft[p].length ? draft[p].map((i) => MACHINES[i].no).join(" → ") + " → out" : "— not made";
   });
   const changed = routeText(draft) !== live;
-  $("rt-apply").disabled = !changed || mode() === "off"; $("rt-undo").disabled = !changed;
+  $("rt-apply").disabled = !changed; $("rt-undo").disabled = !changed;
 }
 document.querySelectorAll(".rt-row").forEach((row) => row.addEventListener("click", (e) => {
   const b = e.target.closest(".btn"); if (!b) return;
@@ -523,8 +578,8 @@ function setMode() {
   document.body.dataset.mode = m;
   $("mode").dataset.m = m;
   $("mode-t").textContent = { off: "NOT CONNECTED", monitor: "MONITOR · ESP32 ONLINE", control: "CONTROL · ESP32 OFFLINE" }[m];
-  $("mode-s").textContent = { off: "ต่อ MQTT ก่อน", monitor: "บอร์ดคุมไลน์อยู่ หน้านี้ดูสัญญาณอย่างเดียว", control: "หน้านี้คุมไลน์จำลองบน dashboard แทนบอร์ด" }[m];
-  if (m === "control") { $("route").textContent = ""; prev = null; renderCtl(); publish(); }
+  $("mode-s").textContent = { off: "ยังไม่ได้ต่อ MQTT · กดปุ่มด้านล่างได้เลย ค่าจะส่งไป dashboard เมื่อต่อแล้ว", monitor: "บอร์ดคุมไลน์อยู่ หน้านี้ดูสัญญาณอย่างเดียว", control: "หน้านี้คุมไลน์จำลองบน dashboard แทนบอร์ด" }[m];
+  if (m !== "monitor") { $("route").textContent = ""; prev = null; renderCtl(); if (m === "control") publish(); }
   if (was && was !== "off") event(m === "monitor" ? "ESP32 online · monitor mode" : m === "control" ? "ESP32 offline · control mode" : "disconnected", "n");
 }
 
@@ -582,6 +637,91 @@ $("go").addEventListener("click", connect);
 $("pass").addEventListener("keydown", (e) => { if (e.key === "Enter" && !client) connect(); });
 $("ev-clear").addEventListener("click", () => { $("events").innerHTML = ""; });
 $("raw-pause").addEventListener("click", (e) => { rawPaused = !rawPaused; e.target.setAttribute("aria-pressed", String(rawPaused)); e.target.textContent = rawPaused ? "Resume" : "Pause"; });
+/* ---------- the board diagram: pins, leads out to what they are wired to, live state ---------- */
+const BD = (() => {
+  const L = ["3V3", "EN", "VP 36", "VN 39", "34", "35", "32", "33", "25", "26", "27", "14", "12", "GND", "13", "SD2", "SD3", "CMD", "5V"];
+  const R = ["GND", "23", "22", "TX0", "RX0", "21", "GND", "19", "18", "5", "17", "16", "4", "0", "2", "15", "SD1", "SD0", "CLK"];
+  const PY = (i) => 112 + i * 28, XL = 470, XR = 630;
+  // group: colour, side, pins (pin -> label), card box, text
+  const G = [
+    { k: "knob", c: "#30a46c", side: "L", pins: { 32: "M1", 33: "M2", 34: "M3", 35: "M4" }, box: [20, 60, 330, 160],
+      t: "ปุ่มหมุน (pot) × 4 · ความเร็ว", to: "ขา 32 → M1 · 33 → M2 · 34 → M3 · 35 → M4 · ขาข้างต่อ 3.3V / GND",
+      do: "หมุน = ความเร็ว 0–200 % (ทีละ 5 %) · 100 % = cycle มาตรฐาน · 0 % = เครื่องหยุด", ev: "speed_pct (สรุปรายนาที) · Performance" },
+    { k: "run", c: "#3e63dd", side: "L", pins: { 25: "M1", 26: "M2", 27: "M3", 14: "M4" }, box: [20, 235, 330, 140],
+      t: "สวิตช์ RUN 7×7 กดติด × 4", to: "ขา 25 → M1 · 26 → M2 · 27 → M3 · 14 → M4 · อีกขาลง GND",
+      do: "ล็อกลง = เครื่องเดิน · ปลด = เครื่องหยุด", ev: "run_on / run_off · Availability" },
+    { k: "al", c: "#8e4ec6", side: "L", pins: { 13: "ALARM" }, box: [20, 390, 330, 125],
+      t: "สวิตช์ ALARM / E-stop 7×7 กดติด", to: "ขา 13 · อีกขาลง GND",
+      do: "ล็อกลง = ทุกเครื่องหยุดทันที และไฟ LED บนบอร์ดติด", ev: "alarm_on / alarm_off · ลด Availability" },
+    { k: "en", c: "#8c8c90", side: "L", btn: [492, 648], box: [20, 530, 330, 100],
+      t: "ปุ่ม EN บนตัวบอร์ด", to: "ไม่ต้องต่อสาย",
+      do: "รีสตาร์ตบอร์ด · ตัวนับเริ่มใหม่ แต่ database ไม่หาย · เส้นทาง product ยังจำไว้", ev: "boot" },
+    { k: "door", c: "#d9822b", side: "R", pins: { 23: "M1", 19: "M2", 18: "M3", 17: "M4" }, box: [750, 60, 330, 160],
+      t: "ปุ่มฝาเครื่อง 6×6 กดเด้ง × 4", to: "ขา 23 → M1 · 19 → M2 · 18 → M3 · 17 → M4 · อีกขาลง GND",
+      do: "กด 1 ครั้ง = เปิดฝา (เครื่องหยุด ใส่ชิ้นงาน) · กดอีกครั้ง = ปิดฝา", ev: "door_open / door_close · ลด Availability" },
+    { k: "good", c: "#12a594", side: "R", pins: { 16: "GOOD" }, box: [750, 235, 330, 110],
+      t: "ปุ่ม GOOD 6×6", to: "ขา 16 · อีกขาลง GND",
+      do: "ตรวจแล้วดี → ชิ้นงานล่าสุดไปกอง FG ของ product นั้น", ev: "good + product · Quality" },
+    { k: "rej", c: "#e54666", side: "R", pins: { 4: "REJECT" }, box: [750, 360, 330, 110],
+      t: "ปุ่ม REJECT 6×6", to: "ขา 4 · อีกขาลง GND",
+      do: "ตรวจแล้วเสีย → ชิ้นงานล่าสุดไปกอง NG ของ product นั้น", ev: "reject + product · ลด Quality" },
+    { k: "led", c: "#e5484d", side: "R", pins: { 2: "LED" }, box: [750, 485, 330, 82],
+      t: "ไฟ LED บนตัวบอร์ด", to: "ขา 2 · มีบนบอร์ดแล้ว ไม่ต้องต่อ", do: "ติดเมื่อ Alarm เปิด", ev: "" },
+    { k: "boot", c: "#8c8c90", side: "R", btn: [608, 648], box: [750, 582, 330, 60],
+      t: "ปุ่ม BOOT บนตัวบอร์ด", to: "", do: "ใช้ตอนอัปโหลดโค้ดเท่านั้น", ev: "" },
+  ];
+  const pinGroup = {};
+  G.forEach((g) => Object.keys(g.pins || {}).forEach((p) => (pinGroup[p] = g)));
+  const esc = (t) => String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;");
+  let svg = `<rect class="pcb" x="450" y="40" width="200" height="630" rx="10"/>
+    <rect class="mod" x="522" y="50" width="56" height="130" rx="3"/><text class="mod-t" x="550" y="110" text-anchor="middle">ESP32</text><text class="mod-t" x="550" y="124" text-anchor="middle" style="font-weight:400;font-size:8px">WROOM</text>
+    <rect class="usb" x="530" y="655" width="40" height="22" rx="5"/><text class="btn-t" x="550" y="648" text-anchor="middle">USB-C</text>
+    <rect class="btnb" x="480" y="640" width="24" height="16" rx="3"/><text class="btn-t" x="492" y="632" text-anchor="middle">EN</text>
+    <rect class="btnb" x="596" y="640" width="24" height="16" rx="3"/><text class="btn-t" x="608" y="632" text-anchor="middle">BOOT</text>`;
+  const pinSvg = (name, i, side) => {
+    const g = pinGroup[name], x = side === "L" ? XL : XR, y = PY(i);
+    const cls = g ? "pin used" : name === "3V3" || name === "5V" ? "pin pwr" : name === "GND" ? "pin gnd" : "pin";
+    const tx = side === "L" ? x + 13 : x - 13, anchor = side === "L" ? "start" : "end";
+    return `<circle class="${cls}" cx="${x}" cy="${y}" r="6" ${g ? `style="--c:${g.c}"` : ""}/><text class="pin-t${g ? " used" : ""}" x="${tx}" y="${y + 3.5}" text-anchor="${anchor}">${esc(name)}</text>`;
+  };
+  L.forEach((n, i) => (svg += pinSvg(n, i, "L")));
+  R.forEach((n, i) => (svg += pinSvg(n, i, "R")));
+  // leads: from the pin (or the board button) out to its own column, then across to the card. Each group has its
+  // own band of columns, and inside a group the pins go in board order, so no two leads cross.
+  let colL = 447, colR = 655;
+  G.forEach((g) => {
+    const [bx, by, bw, bh] = g.box, L_ = g.side === "L";
+    const ends = g.btn ? [[-1, g.btn]] : Object.keys(g.pins).map((p) => [Object.keys(g.pins).indexOf(p), [L_ ? XL : XR, PY((L_ ? L : R).indexOf(p))]]).sort((a, b) => a[1][1] - b[1][1]);
+    ends.forEach(([j, [x, y]], k) => {
+      const ay = by + 22 + (k + 0.5) * ((bh - 30) / ends.length), ex = L_ ? bx + bw : bx;
+      const col = L_ ? (colL -= 8) : (colR += 8);
+      svg += `<polyline class="lead" data-lead="${g.k}${j < 0 ? "" : j}" style="--c:${g.c}" points="${x},${y} ${col},${y} ${col},${ay} ${ex},${ay}"/>`;
+    });
+    if (L_) colL -= 4; else colR += 4;
+    svg += `<foreignObject x="${bx}" y="${by}" width="${bw}" height="${bh}"><div xmlns="http://www.w3.org/1999/xhtml" class="bd-card" style="--c:${g.c}">
+      <b>${esc(g.t)}</b>${g.to ? `<div class="to">${esc(g.to)}</div>` : ""}<div class="do">${esc(g.do)}</div>${g.ev ? `<div class="ev">${esc(g.ev)}</div>` : ""}<div class="bd-live" data-live="${g.k}"></div></div></foreignObject>`;
+  });
+  $("bd").innerHTML = svg;
+  const live = Object.fromEntries([...document.querySelectorAll("#bd [data-live]")].map((e) => [e.dataset.live, e]));
+  const chips = (on, labels, text) => labels.map((l, i) => `<span class="${on[i] ? "on" : ""}">${l}${text ? " " + text[i] : ""}</span>`).join("");
+  const M = ["M1", "M2", "M3", "M4"];
+  // st = {pot:[..], run:[..], door:[..], al, good, rej}: the board's line, or this page's controls
+  return (st) => {
+    if (!st) return;
+    live.knob.innerHTML = chips(st.pot.map((p) => pctOf(p) > 0), M, st.pot.map((p) => pctOf(p) + "%"));
+    live.run.innerHTML = chips(st.run.map(Boolean), M, st.run.map((r) => (r ? "RUN" : "STOP")));
+    live.al.innerHTML = chips([!!st.al], [st.al ? "ALARM ON" : "no alarm"]);
+    live.door.innerHTML = chips((st.door || [0, 0, 0, 0]).map(Boolean), M, (st.door || [0, 0, 0, 0]).map((d) => (d ? "open" : "closed")));
+    live.good.innerHTML = chips([false], [`กดแล้ว ${st.good >>> 0} ครั้ง`]);
+    live.rej.innerHTML = chips([false], [`กดแล้ว ${st.rej >>> 0} ครั้ง`]);
+    live.led.innerHTML = chips([!!st.al], [st.al ? "ติด" : "ดับ"]);
+    document.querySelectorAll("#bd [data-lead]").forEach((l) => {
+      const k = l.dataset.lead, g = k.replace(/\d+$/, ""), j = +k.slice(g.length);
+      l.classList.toggle("on", g === "run" ? !!st.run[j] : g === "door" ? !!(st.door && st.door[j]) : g === "al" || g === "led" ? !!st.al : g === "knob" ? pctOf(st.pot[j]) > 0 : false);
+    });
+  };
+})();
+
 // the wiring map loads when opened, and grows to its full height
 $("wiring").addEventListener("toggle", (e) => {
   const f = e.currentTarget.querySelector("iframe");

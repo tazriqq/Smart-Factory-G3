@@ -1020,6 +1020,34 @@ fit(false);
 setTimeout(() => {
   document.querySelectorAll('.lf-slot [data-toggle][aria-pressed="true"]').forEach((b) => b.click());
 }, 400);
+/* ---------- phone: live numbers instead of the 3D floor ----------
+   On a narrow screen the floor is hidden (CSS) and these cards show the same numbers as the floor's tags
+   and output panels, copied from them twice a second. The line keeps running underneath either way. */
+const phone = matchMedia('(max-width:760px)');
+const mv = document.createElement('section');
+mv.className = 'm-view'; mv.setAttribute('aria-label', 'Line, live');
+mv.innerHTML = `<div class="mv-outs"></div><div class="mv-ms">${MACHINES.map((m, i) => `<div class="mv-card mv-m">
+  <div class="mv-h"><i class="mv-dot"></i><b>${m.no} ${m.name}</b><span class="tg-pr"></span><em class="mv-st"></em></div>
+  <div class="mv-g"><span><small>speed</small><b data-v="spd"></b></span><span><small>cycle</small><b data-v="ct"></b></span><span><small>OEE</small><b data-v="oee"></b></span><span><small>parts</small><b data-v="n"></b></span></div>
+  <div class="mv-apq" data-v="apq"></div></div>`).join('')}</div>`;
+document.querySelector('.line-bar').after(mv);
+const mvCards = [...mv.querySelectorAll('.mv-m')].map((c) => ({ c, dot: c.querySelector('.mv-dot'), pr: c.querySelector('.tg-pr'), st: c.querySelector('.mv-st'), v: Object.fromEntries([...c.querySelectorAll('[data-v]')].map((e) => [e.dataset.v, e])) }));
+function renderPhone() {
+  if (!phone.matches) return;
+  mv.querySelector('.mv-outs').innerHTML = outs.map((o) => `<div class="mv-card"><div class="mv-h"><span class="o-p" data-p="${o.p}">${PRODUCTS[o.p]}</span><b>Output ${PRODUCTS[o.p]}</b><em>${ROUTE[o.p].map((i) => MACHINES[i].no).join(' → ')}</em></div>
+    <div class="mv-g"><span><small>total</small><b>${o.tot.textContent}</b></span><span><small>QC wait</small><b>${o.wait.textContent}</b></span><span class="o-good"><small>good</small><b>${o.good.textContent}</b></span><span class="o-bad"><small>scrap</small><b>${o.bad.textContent}</b></span></div>
+    <div class="mv-apq">yield ${o.yld.textContent}</div></div>`).join('');
+  slots.forEach((s, i) => {
+    const k = mvCards[i];
+    k.dot.className = 'mv-dot ' + s.dot.className; k.st.textContent = s.dot.title;
+    k.pr.dataset.p = s.pr.dataset.p; k.pr.textContent = s.pr.textContent;
+    k.c.classList.toggle('idle', s.tag.classList.contains('idle'));
+    k.v.spd.textContent = s.spd.textContent; k.v.ct.textContent = s.ct.textContent; k.v.oee.textContent = s.oee.textContent;
+    k.v.oee.dataset.band = s.oee.dataset.band || ''; k.v.n.textContent = s.n.textContent; k.v.apq.textContent = s.apq.textContent;
+  });
+}
+setInterval(renderPhone, 500);
+
 /* ---------- products: route editor ----------
    Click machines in order for each product (click again to take one out), then Apply. With a board
    connected the route goes to the board, and the line follows once the board reports it back. */
