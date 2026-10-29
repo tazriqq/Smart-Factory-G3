@@ -379,7 +379,8 @@ function fmtDur(ms) {
   if (s < 3600) return Math.floor(s / 60) + " min " + String(s % 60).padStart(2, "0") + " s";
   return Math.floor(s / 3600) + " h " + String(Math.floor(s / 60) % 60).padStart(2, "0") + " min";
 }
-const clock = () => new Date().toLocaleTimeString("en-GB", { hour12: false });
+// 2026-10-30-14-05-09 (local time)
+const clock = (d = new Date()) => [d.getFullYear(), d.getMonth() + 1, d.getDate(), d.getHours(), d.getMinutes(), d.getSeconds()].map((n) => String(n).padStart(2, "0")).join("-");
 function event(text, cls = "") {
   const box = $("events");
   box.querySelector(".empty")?.remove();

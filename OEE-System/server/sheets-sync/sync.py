@@ -30,21 +30,22 @@ EVENTS_GAP = max(5, int(os.environ.get("SHEETS_EVENTS_GAP_S", "10")))
 MAX_ROWS = max(10, int(os.environ.get("SHEETS_MAX_ROWS", "1000")))
 
 RATIOS = "availability, performance, quality, oee"
+STAMP = "YYYY-MM-DD-HH24-MI-SS"   # times in the sheet and in this log: 2026-10-30-14-05-09
 TABS = {
     "OEE_Daily": f"""
         SELECT to_char(day, 'YYYY-MM-DD') AS date, line, machine, product, name, logged_min, run_min, stop_min, alarm_min,
                parts, ideal_cycle_s, good, reject, {RATIOS}
         FROM oee_daily ORDER BY day, line, machine""",
     "OEE_Hourly": f"""
-        SELECT to_char(period_start, 'YYYY-MM-DD HH24:MI') AS hour, line, machine, product, name, logged_min, run_min,
+        SELECT to_char(period_start, '{STAMP}') AS hour, line, machine, product, name, logged_min, run_min,
                stop_min, alarm_min, parts, ideal_cycle_s, good, reject, {RATIOS}
         FROM oee('1 hour', date_trunc('day', now()) - make_interval(days => %s)) ORDER BY 1, 2, 3""",
     "Products": """
         SELECT to_char(day, 'YYYY-MM-DD') AS date, line, product, output, good, reject, quality
         FROM product_daily ORDER BY day, line, product""",
     "Machines": "SELECT line, machine, name, ideal_cycle_s FROM machines ORDER BY line, machine",
-    "Events": """
-        SELECT to_char(e.time, 'YYYY-MM-DD HH24:MI:SS') AS time, e.line, e.machine,
+    "Events": f"""
+        SELECT to_char(e.time, '{STAMP}') AS time, e.line, e.machine,
                CASE WHEN e.machine = 0 THEN 'whole line' ELSE m.name END AS name, e.event, e.product, e.route
         FROM events e LEFT JOIN machines m ON m.line = e.line AND m.machine = e.machine
         ORDER BY e.time DESC LIMIT %s""",
@@ -76,7 +77,7 @@ def read_tabs(names):
             if len(rows) > MAX_ROWS:
                 rows = rows[:MAX_ROWS] if name == "Events" else rows[-MAX_ROWS:]
             tabs[name] = {"header": [c.name for c in cur.description], "rows": rows}
-        cur.execute("SELECT to_char(now(), 'YYYY-MM-DD HH24:MI:SS')")
+        cur.execute(f"SELECT to_char(now(), '{STAMP}')")
         updated = cur.fetchone()[0]
     return tabs, updated
 
