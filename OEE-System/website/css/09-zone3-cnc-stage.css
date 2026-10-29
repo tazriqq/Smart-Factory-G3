@@ -1,0 +1,131 @@
+/* 09-zone3-cnc-stage.css - ZONE 3 - line stage: controls, status, alarm beacon */
+.cnc-stage{position:relative;touch-action:pan-y;outline:none}
+.cnc-stage:focus-visible{outline:1px solid var(--anatomy-muted);outline-offset:6px}
+.cnc-stage>svg,.cnc-stage>canvas{display:block;width:100%;height:auto}
+.cnc-stage>.cnc-mid,.cnc-stage>.cnc-front,.cnc-stage>canvas{position:absolute;inset:0;height:100%!important;pointer-events:none}
+.cnc-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+
+/* wood: a warm tint of the figure's own inks */
+.cnc-wood,.iso .cnc-wood{
+  --anatomy-paper:#f3e6d3;--anatomy-face:#f7ecdc;--anatomy-top:#f6ead8;
+  --anatomy-shade-0:#dcc4a2;--anatomy-shade-1:#e4cfb0;--anatomy-shade-2:#ead8bd;--anatomy-shade-3:#efe0c9;
+  --anatomy-hi:#5a4632;--anatomy-lo:#c2a582;--anatomy-faint:#e2cfb4;
+}
+.iso[data-theme="dark"] .cnc-wood{
+  --anatomy-paper:#2a241d;--anatomy-face:#2e271f;--anatomy-top:#2f2820;
+  --anatomy-shade-0:#1d1914;--anatomy-shade-1:#221d17;--anatomy-shade-2:#26201a;--anatomy-shade-3:#29231c;
+  --anatomy-hi:#d8c2a2;--anatomy-lo:#6d5b45;--anatomy-faint:#3d3428;
+}
+.cnc-slot{fill:var(--anatomy-shade-0);stroke:none}
+
+/* work-plane drawing: strokes are in millimetres, so they scale with the board */
+.cnc-work path{fill:none;vector-effect:none;stroke-linecap:round;stroke-linejoin:round}
+.cnc-layout{stroke:var(--cnc-pencil);stroke-width:.32;stroke-dasharray:1.2 1.6;opacity:.9}
+.cnc-groove-cut{stroke:var(--cnc-groove);stroke-width:3.175}
+.cnc-groove-wall{stroke:var(--cnc-groove-wall);stroke-width:.85}
+.cnc-groove-floor{stroke:var(--cnc-groove-lip);stroke-width:1.3}
+.cnc-work.cnc-fading{transition:opacity .9s ease;opacity:0}
+.iso{--cnc-pencil:#b49a7a;--cnc-groove:#9c7a55;--cnc-groove-wall:#e2c7a2;--cnc-groove-lip:#6f5135}
+.iso[data-theme="dark"]{--cnc-pencil:#6a5843;--cnc-groove:#14100c;--cnc-groove-wall:#7a6248;--cnc-groove-lip:#060504}
+.cnc-next{fill:none;stroke:var(--anatomy-lit);stroke-width:.9;stroke-dasharray:2.2 2.4;stroke-linecap:round;opacity:.75}
+.cnc-target circle{fill:none;stroke:var(--anatomy-lit);stroke-width:.7;vector-effect:non-scaling-stroke}
+.cnc-target .cnc-target-dot{fill:var(--anatomy-lit);stroke:none}
+.cnc-blur{fill:var(--anatomy-lit);stroke:none;opacity:0}
+
+/* cables: a ribbon with two edges, and step pulses running along it */
+.cnc-cable path{fill:none;stroke-linecap:round;stroke-linejoin:round}
+.cnc-cable .cb-edge{stroke:var(--anatomy-mid);stroke-width:3.4px}
+.cnc-cable .cb-core{stroke:var(--anatomy-shade-2);stroke-width:2.2px}
+.cnc-cable .cb-pulse{stroke-width:1.7px;stroke-dasharray:.01 7;opacity:0}
+.cnc-cable[data-axis="x"] .cb-pulse{stroke:var(--anatomy-red)}
+.cnc-cable[data-axis="y"] .cb-pulse{stroke:var(--anatomy-green)}
+.cnc-cable[data-axis="z"] .cb-pulse{stroke:var(--anatomy-blue)}
+.cnc-cable[data-axis="spindle"] .cb-pulse{stroke:var(--anatomy-lo);stroke-width:1px;stroke-dasharray:3 4}
+
+.cnc-led-body{fill:var(--anatomy-paper);stroke:var(--anatomy-mid);stroke-width:.5}
+.cnc-led-glow{fill:var(--led);opacity:0;filter:blur(1.2px)}
+.cnc-led[data-led="power"]{--led:var(--anatomy-hi)}
+.cnc-led[data-led="rx"]{--led:var(--anatomy-hi)}
+.cnc-led[data-led="x"]{--led:var(--anatomy-red)}
+.cnc-led[data-led="y"]{--led:var(--anatomy-green)}
+.cnc-led[data-led="z"]{--led:var(--anatomy-blue)}
+.cnc-led[data-on] .cnc-led-body{fill:var(--led);stroke:var(--led)}
+
+/* focus an axis: its drive becomes the lit part */
+.cnc-stage[data-focus] [data-live="bit"]{--anatomy-lit:var(--anatomy-hi);--anatomy-lit-top:var(--anatomy-top);--anatomy-lit-shade:var(--anatomy-shade-2)}
+.cnc-stage[data-focus="x"] .cnc-drive[data-axis="x"] .iso-edge,.cnc-stage[data-focus="y"] .cnc-drive[data-axis="y"] .iso-edge,.cnc-stage[data-focus="z"] .cnc-drive[data-axis="z"] .iso-edge{stroke:var(--anatomy-lit);stroke-width:1.1px}
+.cnc-stage[data-focus="x"] .cnc-drive[data-axis="x"] .iso-top,.cnc-stage[data-focus="y"] .cnc-drive[data-axis="y"] .iso-top,.cnc-stage[data-focus="z"] .cnc-drive[data-axis="z"] .iso-top{fill:var(--anatomy-lit-top)}
+.cnc-stage[data-off~="x"] .cnc-cable[data-axis="x"] .cb-core,.cnc-stage[data-off~="y"] .cnc-cable[data-axis="y"] .cb-core,.cnc-stage[data-off~="z"] .cnc-cable[data-axis="z"] .cb-core{stroke:var(--anatomy-paper)}
+
+.cnc-gl{image-rendering:auto}
+.cnc-fallback{display:none}
+.cnc-stage:not([data-gl]) .cnc-fallback{display:inline}
+.cnc-chip{fill:var(--cnc-chip);stroke:var(--cnc-chip-edge);stroke-width:.35}
+.iso{--cnc-chip:#e8cfa8;--cnc-chip-edge:#a78358}
+.iso[data-theme="dark"]{--cnc-chip:#cfb48c;--cnc-chip-edge:#7d6447}
+
+/* controls under the drawing */
+.cnc-controls{display:grid;gap:10px;margin-top:6px;font-family:var(--anatomy-mono);font-size:11.5px;color:var(--anatomy-text)}
+.cnc-row{display:flex;flex-wrap:wrap;justify-content:space-between;gap:10px}
+.cnc-axes,.cnc-run{display:flex;gap:6px}
+.cnc-controls button{appearance:none;font:inherit;color:var(--anatomy-strong);background:var(--anatomy-card);border:0;box-shadow:0 0 0 1px var(--anatomy-lo);padding:6px 10px;min-width:34px;cursor:pointer;display:inline-flex;align-items:center;gap:7px;letter-spacing:.04em}
+.cnc-controls button:hover{box-shadow:0 0 0 1px var(--anatomy-mid)}
+.cnc-controls button:focus-visible{outline:1px solid var(--anatomy-muted);outline-offset:3px}
+.cnc-axis i{width:14px;height:2px;background:currentColor}
+.cnc-axis[data-axis="x"] i{background:var(--anatomy-red)}
+.cnc-axis[data-axis="y"] i{background:var(--anatomy-green)}
+.cnc-axis[data-axis="z"] i{background:var(--anatomy-blue)}
+.cnc-axis span{color:var(--anatomy-muted);font-size:10px;text-transform:uppercase;letter-spacing:.1em}
+.cnc-axis[aria-pressed="false"]{color:var(--anatomy-muted)}
+.cnc-axis[aria-pressed="false"] i{opacity:.3}
+.cnc-code-wrap{position:relative;height:118px;overflow:hidden;box-shadow:0 0 0 1px var(--anatomy-faint)}
+.cnc-code{list-style:none;margin:0;padding:47px 0;position:absolute;inset:0 0 auto 0;transition:transform .35s var(--anatomy-ease)}
+.cnc-code li{height:20px;line-height:20px;padding:0 12px;white-space:nowrap;color:var(--anatomy-muted)}
+.cnc-code li[data-done]{color:var(--anatomy-lo)}
+.cnc-code li[data-now]{color:var(--anatomy-strong);background:var(--anatomy-shade-1)}
+.iso[data-theme="dark"] .cnc-code li[data-now]{background:#1d1d1d}
+.cnc-ln{display:inline-block;width:34px;color:var(--anatomy-lo)}
+.cnc-code-wrap::before,.cnc-code-wrap::after{content:"";position:absolute;left:0;right:0;height:34px;z-index:1;pointer-events:none}
+.cnc-code-wrap::before{top:0;background:linear-gradient(var(--anatomy-card),transparent)}
+.cnc-code-wrap::after{bottom:0;background:linear-gradient(transparent,var(--anatomy-card))}
+.cnc-status{display:flex;flex-wrap:wrap;gap:4px 18px;color:var(--anatomy-muted);font-variant-numeric:tabular-nums}
+@media (prefers-reduced-motion:reduce){.cnc-code{transition:none}}
+
+.cnc-spin-dots circle,.cnc-setscrews circle{fill:var(--anatomy-dot)}
+.cnc-spade{fill:var(--anatomy-face);stroke:var(--anatomy-hi);stroke-width:.6}
+
+/* status beacon: idle grey, run green, alarm red */
+.cnc-stage{--beacon:var(--anatomy-lo);--cnc-b-paper:var(--anatomy-paper);--cnc-b-top:var(--anatomy-top);--cnc-b-s0:var(--anatomy-shade-0);--cnc-b-s1:var(--anatomy-shade-1);--cnc-b-s2:var(--anatomy-shade-2);--cnc-b-s3:var(--anatomy-shade-3)}
+.cnc-stage[data-state="run"]{--beacon:var(--anatomy-green)}
+.cnc-stage[data-state="alarm"]{--beacon:var(--anatomy-red)}
+.cnc-lens{--anatomy-paper:color-mix(in srgb,var(--beacon) 55%,var(--cnc-b-paper));--anatomy-top:color-mix(in srgb,var(--beacon) 45%,var(--cnc-b-top));--anatomy-shade-0:color-mix(in srgb,var(--beacon) 80%,var(--cnc-b-s0));--anatomy-shade-1:color-mix(in srgb,var(--beacon) 72%,var(--cnc-b-s1));--anatomy-shade-2:color-mix(in srgb,var(--beacon) 64%,var(--cnc-b-s2));--anatomy-shade-3:color-mix(in srgb,var(--beacon) 56%,var(--cnc-b-s3))}
+.cnc-beacon-glow{fill:var(--beacon);opacity:0;filter:blur(4px);transition:opacity .3s}
+.cnc-stage[data-state="run"] .cnc-beacon-glow{opacity:.35}
+.cnc-stage[data-state="alarm"] .cnc-beacon-glow{opacity:.55;animation:cnc-blink 1s steps(2,jump-none) infinite}
+.cnc-stage[data-state="alarm"] .cnc-lens{animation:cnc-blink 1s steps(2,jump-none) infinite}
+@keyframes cnc-blink{0%{opacity:1}100%{opacity:.35}}
+
+/* motor temperature: a warm tint mixed into the motor's own tones */
+.cnc-motor{--anatomy-paper:color-mix(in srgb,var(--heat-col,transparent) var(--heat,0%),var(--cnc-b-paper));--anatomy-top:color-mix(in srgb,var(--heat-col,transparent) var(--heat,0%),var(--cnc-b-top));--anatomy-shade-0:color-mix(in srgb,var(--heat-col,transparent) var(--heat,0%),var(--cnc-b-s0));--anatomy-shade-1:color-mix(in srgb,var(--heat-col,transparent) var(--heat,0%),var(--cnc-b-s1));--anatomy-shade-2:color-mix(in srgb,var(--heat-col,transparent) var(--heat,0%),var(--cnc-b-s2));--anatomy-shade-3:color-mix(in srgb,var(--heat-col,transparent) var(--heat,0%),var(--cnc-b-s3))}
+.cnc-motor .iso-shade,.cnc-motor .iso-top,.cnc-motor .iso-fill{transition:fill .6s}
+
+/* source switch */
+.cnc-moderow{align-items:center;justify-content:flex-start}
+.cnc-mode{display:flex}
+.cnc-mode button{min-width:0}
+.cnc-mode button+button{margin-left:1px}
+.cnc-mode button[aria-pressed="true"]{background:var(--anatomy-strong);color:var(--anatomy-card);box-shadow:0 0 0 1px var(--anatomy-strong)}
+.cnc-url{display:flex;align-items:center;gap:8px;flex:1 1 220px;min-width:0;color:var(--anatomy-muted);font-size:10px;text-transform:uppercase;letter-spacing:.1em}
+.cnc-url input{flex:1;min-width:0;font:inherit;font-size:11.5px;text-transform:none;letter-spacing:0;color:var(--anatomy-strong);background:var(--anatomy-card);border:0;box-shadow:0 0 0 1px var(--anatomy-lo);padding:6px 8px}
+.cnc-url input:focus-visible{outline:1px solid var(--anatomy-muted);outline-offset:3px}
+.cnc-conn{display:inline-flex;align-items:center;gap:7px;color:var(--anatomy-muted)}
+.cnc-conn::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--anatomy-lo)}
+.cnc-conn[data-conn="on"]::before{background:var(--anatomy-green)}
+.cnc-conn[data-conn="wait"]::before{background:var(--anatomy-mid)}
+.cnc-conn[data-conn="err"]::before{background:var(--anatomy-red)}
+.cnc-controls button:disabled{opacity:.35;cursor:default}
+.cnc-status [data-s="state"]{display:inline-flex;align-items:center;gap:6px;text-transform:uppercase;letter-spacing:.08em}
+.cnc-status [data-s="state"]::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--anatomy-lo)}
+.cnc-status [data-s="state"][data-state="run"]::before{background:var(--anatomy-green)}
+.cnc-status [data-s="state"][data-state="alarm"]::before{background:var(--anatomy-red)}
+@media (prefers-reduced-motion:reduce){.cnc-stage[data-state="alarm"] .cnc-beacon-glow,.cnc-stage[data-state="alarm"] .cnc-lens{animation:none}}

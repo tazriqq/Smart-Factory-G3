@@ -1,0 +1,75 @@
+/* 02-layout-dashboard.css - Page layout: header bar, left panel, line area, OEE area (all zones) */
+.iso-page{max-width:1180px!important;width:min(1180px,100% - 32px)!important}
+.dash{display:grid;gap:16px}
+.dash-bar{display:flex;flex-wrap:wrap;align-items:center;gap:8px 18px;padding:10px 14px;background:var(--anatomy-card);box-shadow:0 0 0 1px var(--anatomy-mid);font-family:var(--anatomy-mono);font-size:12px;color:var(--anatomy-text)}
+.dash-title{color:var(--anatomy-strong);font-size:12.5px;letter-spacing:.06em;text-transform:uppercase;margin-right:6px}
+.dash-title span{color:var(--anatomy-muted)}
+.knob-row{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:4px 10px;padding:6px 2px 0;font-family:var(--anatomy-mono);font-size:11px;color:var(--anatomy-muted)}
+.knob-row b{color:var(--anatomy-strong);font-weight:500;font-variant-numeric:tabular-nums}
+@media (min-width:1180px) and (min-height:620px){
+  .iso-page{max-width:none!important;width:100%!important;margin:0!important;padding:12px!important;box-sizing:border-box}
+  .dash{grid-template-columns:clamp(176px,14vw,240px) minmax(0,1fr) clamp(430px,33vw,580px);grid-template-rows:auto minmax(0,1fr);gap:12px;height:calc(100dvh - 24px)}
+  .dash-bar{grid-column:1/-1;padding:8px 12px}
+  #status{flex:1 1 200px;font-size:11px}
+  .dash-knobs,.dash-machine,.dash-oee{min-height:0;overflow:auto;overscroll-behavior:contain}
+  .dash .pot-deck{margin:0}
+  .dash .pots{grid-template-columns:1fr;gap:10px}
+  .dash .pots .iso-plate{padding:26px 6px 22px}
+  .dash .pots .iso-plate-corners{inset:8px 9px}
+  .dash .pots .iso-plate-corner{font-size:9px;letter-spacing:.02em}
+  .dash .pots [data-corner="hint"]{display:none}
+  .dash .pots .pot-callout{display:none}
+  .dash .pots .iso-svg{height:calc((100dvh - 24px - 60px - 3 * 96px) / 3);width:auto;max-width:100%;margin:0 auto}
+  .dash .cnc-wrap{max-width:none;height:100%}
+  .dash .cnc-wrap .iso-figure{margin:0;height:100%}
+  .dash .cnc-wrap .iso-plate{box-sizing:border-box;height:100%;padding:34px 14px 40px;display:flex;flex-direction:column;justify-content:center}
+  .dash .cnc-wrap .iso-plate-corners{inset:12px 14px}
+  .dash .cnc-wrap figcaption{display:none}
+  .dash .cnc-stage{width:min(100%,calc((100dvh - 24px - 60px - 74px - 205px) * 640 / 600));margin:0 auto}
+  .dash .cnc-code-wrap{height:78px}
+  .dash .cnc-code{padding:29px 0}
+  .dash .oee{margin:0;max-width:none;padding:12px 14px;gap:10px}
+  .dash .oee-group-name{flex-basis:100%}
+  .dash .oee-settings .oee-group-name{flex-basis:auto}
+  .dash .oee-stats{grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+  .dash .oee-stats b{font-size:12px}
+  .dash .oee-stats small{display:none}
+  .dash .oee-kpis{grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+  .dash .oee-kpis b{font-size:20px}
+  .dash .oee-kpis .oee-total{padding-left:8px}
+  .dash .oee-kpis .oee-total b{font-size:24px}
+  .dash .oee-kpis small{font-size:10px}
+  .dash .oee-legend{gap:4px 12px;font-size:10.5px}
+  .dash .oee-head{gap:8px;flex-wrap:nowrap}
+  .dash .oee-title{min-width:0;font-size:12px}
+  .dash .oee-now-box{gap:8px;flex:none}
+  .dash .oee-clock{font-size:15px}
+  .dash .oee-badge{height:30px;padding:0 7px;font-size:12px}
+  .dash .oee button{padding:5px 8px}
+  .dash .oee-seg button{padding:5px 7px}
+  .dash .oee-group .oee-form label{display:flex;align-items:center;gap:6px}
+  .dash .oee-group .oee-form{gap:8px 10px}
+  .dash .oee-group,.dash .oee-parts,.dash .oee-settings{padding-top:9px;gap:8px 10px}
+  .dash .oee-parts .oee-group-name{flex-basis:auto}
+  .dash .oee-count{order:5;flex-basis:100%}
+  .dash .oee-stats span,.dash .oee-kpis span{letter-spacing:.03em;font-size:9.5px}
+  .dash .oee-kpis em{font-size:10.5px}
+  .dash .oee-title small{font-size:10.5px}
+}
+.cnc-wrap{max-width:720px;margin:0 auto}
+.pots{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr))}
+.pots .iso-figure{margin:0;min-width:0}
+.pots .iso-plate{padding:46px 12px}
+.link-main{color:var(--anatomy-strong)}
+#status{flex:1 1 260px;min-width:0}
+@media (min-width:1180px) and (min-height:620px) and (max-height:780px){.dash .oee-legend,.dash .oee-title small,.dash .oee-kpis em{display:none}.dash .oee{gap:8px}.dash .oee-kpis b{font-size:18px}.dash .oee-kpis .oee-total b{font-size:21px}}
+.dash-knobs{order:3}.dash-machine{order:1}.dash-oee{order:2}
+@media (min-width:1180px) and (min-height:620px){.dash-knobs,.dash-machine,.dash-oee{order:0}}
+#connect{font:inherit;letter-spacing:.06em;text-transform:uppercase;padding:7px 14px;background:var(--anatomy-paper);color:var(--anatomy-strong);border:1px solid var(--anatomy-mid);border-radius:0;cursor:pointer}
+#connect:hover{border-color:var(--anatomy-hi)}
+#connect:focus-visible{outline:1px solid var(--anatomy-hi);outline-offset:3px}
+#connect:disabled{opacity:.45;cursor:not-allowed}
+.link-check{display:inline-flex;align-items:center;gap:6px;cursor:pointer}
+[hidden]{display:none!important}
+.dash-bar select,.dash-bar input[type="text"]{font:inherit;font-size:12px;color:var(--anatomy-strong);background:var(--anatomy-paper);border:0;box-shadow:0 0 0 1px var(--anatomy-lo);padding:5px 7px;border-radius:0}
+.dash-bar select:focus-visible,.dash-bar input:focus-visible{outline:1px solid var(--anatomy-hi);outline-offset:3px}

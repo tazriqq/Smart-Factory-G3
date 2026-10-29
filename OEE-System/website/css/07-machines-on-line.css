@@ -1,0 +1,5 @@
+/* 07-machines-on-line.css - How the four machines sit on line 1 (overrides after the machine swap) */
+/* ---- line 1 after the machine swap: 01 LNC-8, 02 + 03 CK0620, 04 GENOS L250E ---- */
+.lf-slot .mx .iso-svg{width:100%!important;margin:0!important}
+.lf-slot[data-slot="router"]{visibility:hidden!important;left:-30000px;top:0;width:640px}
+.dash .cnc-controls{display:none!important}

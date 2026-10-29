@@ -1,0 +1,15 @@
+# passwords for the ESP32 (template: esp32/SmartFactoryBoard_MQTT/secrets.example.h)
+secrets.h
+
+# Arduino build output, editor and OS leftovers
+build/
+*.bin
+*.elf
+.DS_Store
+__MACOSX/
+
+# server passwords (template: server/.env.example)
+.env
+
+# Claude MCP config with the database password (template: .mcp.example.json)
+.mcp.json

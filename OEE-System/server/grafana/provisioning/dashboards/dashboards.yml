@@ -1,0 +1,9 @@
+# loads every dashboard JSON in /var/lib/grafana/dashboards (../../dashboards on this computer)
+apiVersion: 1
+providers:
+  - name: smart-factory
+    folder: Smart Factory
+    type: file
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards

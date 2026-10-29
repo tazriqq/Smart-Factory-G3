@@ -1,0 +1,324 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>ESP32 Wiring Map</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Thai:wght@400;500;600&display=swap">
+<style>
+/* layout: one wide bench drawing (board in the middle, parts wired out to both sides), then the plug-in checklist */
+:root{
+  --bg:#f3f4f1; --panel:#ffffff; --ink:#1d2321; --muted:#68716d; --line:#d6dad5; --soft:#eceee9;
+  --pcb:#1e2a31; --pcb-edge:#2f3e47; --pcb-ink:#dfe7e3; --pcb-dim:#7c8c94; --pad:#c9a54a;
+  --gnd:#262d2b; --v33:#d6362e; --pot:#18925a; --run:#2c68d6; --alarm:#9440c9; --part:#d07a12; --good:#0e8f84; --rej:#cf3672;
+  --forbid:#d6362e; --done:#18925a;
+  --sans:"IBM Plex Sans Thai",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0f1211; --panel:#171b1a; --ink:#e6ebe8; --muted:#8a948f; --line:#2b3230; --soft:#1f2523;
+  --pcb:#1b262c; --pcb-edge:#3a4b55; --pcb-ink:#dfe7e3; --pcb-dim:#7c8c94; --pad:#c9a54a;
+  --gnd:#c9d1cd; --v33:#ff6a60; --pot:#4fd08a; --run:#78a2ff; --alarm:#c48af0; --part:#f2a54a; --good:#3fcabd; --rej:#f17aaa;
+  --forbid:#ff6a60; --done:#4fd08a; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0f1211; --panel:#171b1a; --ink:#e6ebe8; --muted:#8a948f; --line:#2b3230; --soft:#1f2523;
+  --pcb:#1b262c; --pcb-edge:#3a4b55; --pcb-ink:#dfe7e3; --pcb-dim:#7c8c94; --pad:#c9a54a;
+  --gnd:#c9d1cd; --v33:#ff6a60; --pot:#4fd08a; --run:#78a2ff; --alarm:#c48af0; --part:#f2a54a; --good:#3fcabd; --rej:#f17aaa;
+  --forbid:#ff6a60; --done:#4fd08a; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font:15px/1.6 var(--sans);-webkit-font-smoothing:antialiased;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+main{max-width:1160px;margin:0 auto;padding-block:32px 64px;display:grid;gap:20px}
+h1{margin:0;font-size:24px;font-weight:600;letter-spacing:-.01em;text-wrap:balance}
+h2{margin:0;font-size:16px;font-weight:600}
+.lede{margin:4px 0 0;color:var(--muted);max-width:70ch}
+.mono{font-family:var(--mono)}
+.rules{display:flex;flex-wrap:wrap;gap:8px}
+.rule{display:inline-flex;align-items:center;gap:8px;padding:6px 11px;border-radius:6px;background:var(--panel);box-shadow:0 0 0 1px var(--line);font-size:13.5px}
+.rule b{font-family:var(--mono);font-weight:600}
+.legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:13px;color:var(--muted)}
+.legend span{display:inline-flex;align-items:center;gap:7px}
+.legend i{width:22px;height:4px;border-radius:2px;display:inline-block}
+.sheet{background:var(--panel);box-shadow:0 0 0 1px var(--line);border-radius:10px;padding:14px 12px 8px}
+.scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+svg.map{display:block;width:100%;min-width:900px;height:auto}
+.map text{font-family:var(--mono);fill:var(--ink)}
+.map .t-muted{fill:var(--muted)}
+.map .t-pcb{fill:var(--pcb-ink);font-size:11px}
+.map .t-dim{fill:var(--pcb-dim);font-size:11px}
+.map .t-forbid{fill:var(--forbid);font-size:11px}
+.map .wire{fill:none;stroke-width:3.2;stroke-linecap:round;stroke-linejoin:round}
+.map .bus{fill:none;stroke-width:5;stroke-linecap:round}
+.map .node{stroke:var(--panel);stroke-width:1.5}
+.map .lab{font-size:12px;font-weight:600}
+.map .sub{font-size:10.5px;fill:var(--muted)}
+.map g.c{transition:opacity .15s}
+.map.focus g.c:not(.hl){opacity:.18}
+.map g.c.hl .wire{stroke-width:4.6}
+.map g.c.done .wire{stroke-dasharray:none}
+.map g.c:not(.done) .wire.sig{stroke-dasharray:0}
+.hint{margin:6px 4px 0;font-size:12.5px;color:var(--muted)}
+
+.check{display:grid;gap:10px}
+.check-h{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px 16px}
+.progress{font-family:var(--mono);font-size:13px;color:var(--muted)}
+.progress b{color:var(--ink)}
+.reset{appearance:none;border:0;background:none;color:var(--muted);font:13px var(--mono);text-decoration:underline;cursor:pointer;padding:0}
+.reset:focus-visible{outline:2px solid var(--run);outline-offset:2px}
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th{text-align:left;font:500 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);padding:6px 10px;border-bottom:1px solid var(--line)}
+td{padding:7px 10px;border-bottom:1px solid var(--soft);vertical-align:middle}
+tr.row{cursor:default}
+tr.row:hover td,tr.row.hl td{background:var(--soft)}
+tr.row.done td{color:var(--muted)}
+tr.row.done td.pin{text-decoration:line-through}
+td.pin{font:600 13px var(--mono);white-space:nowrap}
+td.sw i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:8px;vertical-align:-1px}
+.tbl{background:var(--panel);box-shadow:0 0 0 1px var(--line);border-radius:10px;overflow-x:auto}
+input[type=checkbox]{width:18px;height:18px;accent-color:var(--done);cursor:pointer}
+input[type=checkbox]:focus-visible{outline:2px solid var(--run);outline-offset:2px}
+.note{font-size:13.5px;color:var(--muted);max-width:80ch}
+.note b{color:var(--ink)}
+@media (prefers-reduced-motion:reduce){.map g.c{transition:none}}
+</style>
+
+<main>
+  <header>
+    <h1>ESP32 Wiring Map · Smart Factory board</h1>
+    <p class="lede">ESP32 38 ขา (หัว USB-C) · สวิตช์ 7×7 กดติด 5 ตัว · ปุ่ม 6×6 กดเด้ง 6 ตัว · pot 4 ตัว (ถ้ามี) · ทุกเส้นในรูปคือสายจัมเปอร์ 1 เส้น</p>
+  </header>
+
+  <div class="rules">
+    <span class="rule">ทุกสวิตช์: <b>GPIO</b> ↔ สวิตช์ ↔ <b>GND</b></span>
+    <span class="rule">ไม่ต้องใช้ตัวต้านทาน</span>
+    <span class="rule">pot ใช้ <b>3.3V</b> เท่านั้น ห้าม 5V</span>
+    <span class="rule">ขากากบาทแดง = ห้ามต่อ</span>
+  </div>
+
+  <div class="legend" aria-label="Wire colours">
+    <span><i style="background:var(--gnd)"></i>GND</span>
+    <span><i style="background:var(--v33)"></i>3.3V</span>
+    <span><i style="background:var(--pot)"></i>pot → speed</span>
+    <span><i style="background:var(--run)"></i>run switch</span>
+    <span><i style="background:var(--alarm)"></i>alarm</span>
+    <span><i style="background:var(--part)"></i>part finished</span>
+    <span><i style="background:var(--good)"></i>QC good</span>
+    <span><i style="background:var(--rej)"></i>QC reject</span>
+  </div>
+
+  <section class="sheet" aria-label="Wiring diagram">
+    <div class="scroll"><svg class="map" id="map" viewBox="0 0 1160 800" role="img" aria-label="ESP32 38-pin board in the middle with every switch, button and pot wired to its GPIO pin and to the GND rail"></svg></div>
+    <p class="hint">ชี้ที่สายหรือแถวในตารางเพื่อดูทีละเส้น · ลำดับขาในรูปคือบอร์ด 38 ขาแบบทั่วไป ให้เทียบชื่อที่พิมพ์ข้างขาบนบอร์ดจริงทุกครั้งก่อนเสียบ</p>
+  </section>
+
+  <section class="check" aria-label="Checklist">
+    <div class="check-h">
+      <h2>เช็กลิสต์เสียบสาย</h2>
+      <span class="progress" id="progress"></span>
+      <button class="reset" id="reset" type="button">ล้างเครื่องหมายทั้งหมด</button>
+    </div>
+    <div class="tbl">
+      <table>
+        <thead><tr><th>เสร็จ</th><th>ขา ESP32</th><th>ต่อกับ</th><th>หน้าที่</th><th>อีกขาของอุปกรณ์</th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+    <p class="note"><b>สวิตช์ 7×7:</b> ใช้แถวเดียวจาก 2 แถว · ขากลางลง GND · ขาริมเข้า GPIO · ถ้าล็อกแล้วหน้าเว็บขึ้น STOP ให้ย้ายสายไปขาริมอีกข้าง<br>
+    <b>ปุ่ม 6×6:</b> เสียบคร่อมร่องกลาง breadboard แล้วใช้ขาทแยงมุมกัน<br>
+    <b>ไม่ได้ต่อ pot:</b> แก้ <span class="mono">HAVE_POTS = false</span> ในโค้ด · <b>ไฟ Alarm:</b> ใช้ LED บนบอร์ด (GPIO 2) ไม่ต้องต่อ</p>
+  </section>
+</main>
+
+<script>
+(() => {
+  const NS = "http://www.w3.org/2000/svg";
+  const svg = document.getElementById("map");
+  const el = (tag, attrs = {}, parent = svg, text) => {
+    const n = document.createElementNS(NS, tag);
+    for (const k in attrs) n.setAttribute(k, attrs[k]);
+    if (text != null) n.textContent = text;
+    parent.appendChild(n); return n;
+  };
+
+  // 38-pin ESP32 DevKit, antenna up, USB down
+  const LEFT  = ["3V3","EN","VP 36","VN 39","34","35","32","33","25","26","27","14","12","GND","13","SD2","SD3","CMD","5V"];
+  const RIGHT = ["GND","23","22","TX0","RX0","21","GND","19","18","5","17","16","4","0","2","15","SD1","SD0","CLK"];
+  const FORBID = new Set(["12","SD2","SD3","CMD","0","15","SD1","SD0","CLK"]);
+  const Y = (i) => 100 + i * 36;
+  const BX0 = 500, BX1 = 660, PL = 512, PR = 648;           // board edges and pin columns
+  const GNDL = 34, V33 = 64, GNDR = 1126;                    // rails
+
+  // every connection: side, pin row, part kind, colour, labels
+  const C = [
+    { k: "p1", side: "L", row: 6,  kind: "pot",   col: "--pot",   pin: "GPIO 32", lab: "M1 speed", sub: "pot ขากลาง", other: "ขาริม 3.3V · ขาริม GND", fn: "ความเร็วเครื่อง 1 (0–200 %)" },
+    { k: "p2", side: "L", row: 7,  kind: "pot",   col: "--pot",   pin: "GPIO 33", lab: "M2 speed", sub: "pot ขากลาง", other: "ขาริม 3.3V · ขาริม GND", fn: "ความเร็วเครื่อง 2 (0–200 %)" },
+    { k: "p3", side: "L", row: 4,  kind: "pot",   col: "--pot",   pin: "GPIO 34", lab: "M3 speed", sub: "pot ขากลาง", other: "ขาริม 3.3V · ขาริม GND", fn: "ความเร็วเครื่อง 3 (0–200 %)" },
+    { k: "p4", side: "L", row: 5,  kind: "pot",   col: "--pot",   pin: "GPIO 35", lab: "M4 speed", sub: "pot ขากลาง", other: "ขาริม 3.3V · ขาริม GND", fn: "ความเร็วเครื่อง 4 (0–200 %)" },
+    { k: "r1", side: "L", row: 8,  kind: "latch", col: "--run",   pin: "GPIO 25", lab: "M1 run",   sub: "7×7 ขาริม",  other: "ขากลาง → GND", fn: "เครื่อง 1 เดิน / หยุด" },
+    { k: "r2", side: "L", row: 9,  kind: "latch", col: "--run",   pin: "GPIO 26", lab: "M2 run",   sub: "7×7 ขาริม",  other: "ขากลาง → GND", fn: "เครื่อง 2 เดิน / หยุด" },
+    { k: "r3", side: "L", row: 10, kind: "latch", col: "--run",   pin: "GPIO 27", lab: "M3 run",   sub: "7×7 ขาริม",  other: "ขากลาง → GND", fn: "เครื่อง 3 เดิน / หยุด" },
+    { k: "r4", side: "L", row: 11, kind: "latch", col: "--run",   pin: "GPIO 14", lab: "M4 run",   sub: "7×7 ขาริม",  other: "ขากลาง → GND", fn: "เครื่อง 4 เดิน / หยุด" },
+    { k: "al", side: "L", row: 14, kind: "latch", col: "--alarm", pin: "GPIO 13", lab: "ALARM",    sub: "7×7 ขาริม",  other: "ขากลาง → GND", fn: "Alarm / E-stop ทั้งไลน์" },
+    { k: "c4", side: "R", row: 1,  kind: "tact",  col: "--part",  pin: "GPIO 23", lab: "M4 part +1", sub: "6×6 ขาทแยง", other: "ขาทแยงอีกขา → GND", fn: "เครื่อง 4 ผลิตเสร็จ 1 ชิ้น" },
+    { k: "rj", side: "R", row: 7,  kind: "tact",  col: "--rej",   pin: "GPIO 19", lab: "REJECT",   sub: "6×6 ขาทแยง", other: "ขาทแยงอีกขา → GND", fn: "QC ชิ้นเสีย +1" },
+    { k: "gd", side: "R", row: 8,  kind: "tact",  col: "--good",  pin: "GPIO 18", lab: "GOOD",     sub: "6×6 ขาทแยง", other: "ขาทแยงอีกขา → GND", fn: "QC ชิ้นดี +1" },
+    { k: "c2", side: "R", row: 10, kind: "tact",  col: "--part",  pin: "GPIO 17", lab: "M2 part +1", sub: "6×6 ขาทแยง", other: "ขาทแยงอีกขา → GND", fn: "เครื่อง 2 ผลิตเสร็จ 1 ชิ้น" },
+    { k: "c1", side: "R", row: 11, kind: "tact",  col: "--part",  pin: "GPIO 16", lab: "M1 part +1", sub: "6×6 ขาทแยง", other: "ขาทแยงอีกขา → GND", fn: "เครื่อง 1 ผลิตเสร็จ 1 ชิ้น" },
+    { k: "c3", side: "R", row: 12, kind: "tact",  col: "--part",  pin: "GPIO 4",  lab: "M3 part +1", sub: "6×6 ขาทแยง", other: "ขาทแยงอีกขา → GND", fn: "เครื่อง 3 ผลิตเสร็จ 1 ชิ้น" },
+  ];
+  // power wires, also on the checklist
+  const P = [
+    { k: "gl", side: "L", row: 13, col: "--gnd", pin: "GND (ซ้าย)",  lab: "GND → rail", other: "แถบ (−) ฝั่งซ้าย", fn: "GND ให้สวิตช์ 7×7 และ pot" },
+    { k: "v3", side: "L", row: 0,  col: "--v33", pin: "3V3",         lab: "3.3V → rail", other: "แถบ (+) ฝั่งซ้าย", fn: "ไฟเลี้ยง pot (เฉพาะถ้ามี pot)" },
+    { k: "gr", side: "R", row: 0,  col: "--gnd", pin: "GND (ขวา)",   lab: "GND → rail", other: "แถบ (−) ฝั่งขวา", fn: "GND ให้ปุ่ม 6×6" },
+  ];
+  const v = (name) => `var(${name})`;
+
+  // ---------- rails ----------
+  const rails = el("g");
+  const gl = C.filter((c) => c.side === "L").map((c) => Y(c.row) + 9).concat([Y(13)]);
+  el("line", { x1: GNDL, x2: GNDL, y1: Math.min(...gl) - 14, y2: Math.max(...gl) + 14, class: "bus", stroke: v("--gnd") }, rails);
+  el("text", { x: GNDL, y: Math.min(...gl) - 22, "text-anchor": "middle", class: "lab" }, rails, "GND");
+  const vl = C.filter((c) => c.kind === "pot").map((c) => Y(c.row) - 9).concat([Y(0)]);
+  el("line", { x1: V33, x2: V33, y1: Math.min(...vl) - 14, y2: Math.max(...vl) + 14, class: "bus", stroke: v("--v33") }, rails);
+  el("text", { x: V33 + 4, y: Math.min(...vl) - 22, "text-anchor": "start", class: "lab", fill: v("--v33") }, rails, "3.3V");
+  const gr = C.filter((c) => c.side === "R").map((c) => Y(c.row) + 9).concat([Y(0)]);
+  el("line", { x1: GNDR, x2: GNDR, y1: Math.min(...gr) - 14, y2: Math.max(...gr) + 14, class: "bus", stroke: v("--gnd") }, rails);
+  el("text", { x: GNDR, y: Math.min(...gr) - 22, "text-anchor": "middle", class: "lab" }, rails, "GND");
+  el("text", { x: 120, y: 30, class: "sub" }, rails, "breadboard rail ซ้าย: (−) GND · (+) 3.3V");
+  el("text", { x: 1040, y: 30, "text-anchor": "end", class: "sub" }, rails, "breadboard rail ขวา: (−) GND");
+
+  // ---------- board ----------
+  const b = el("g");
+  el("rect", { x: BX0, y: 18, width: BX1 - BX0, height: 762, rx: 8, fill: v("--pcb"), stroke: v("--pcb-edge"), "stroke-width": 2 }, b);
+  el("rect", { x: BX0 + 30, y: 30, width: BX1 - BX0 - 60, height: 52, rx: 3, fill: "#8f979c", opacity: .35 }, b);
+  el("text", { x: (BX0 + BX1) / 2, y: 61, "text-anchor": "middle", class: "t-pcb" }, b, "ESP32-WROOM");
+  el("text", { x: (BX0 + BX1) / 2, y: 410, "text-anchor": "middle", class: "t-dim", transform: `rotate(-90 ${(BX0 + BX1) / 2} 410)` }, b, "ESP32 · 38 PIN");
+  el("rect", { x: (BX0 + BX1) / 2 - 18, y: 764, width: 36, height: 22, rx: 6, fill: "#9aa3a8", stroke: v("--pcb-edge") }, b);
+  el("text", { x: (BX0 + BX1) / 2, y: 800 - 2, "text-anchor": "middle", class: "sub" }, b, "USB-C");
+  const used = new Set();
+  C.concat(P).forEach((c) => used.add(c.side + c.row));
+  const pinRow = (names, side) => names.forEach((n, i) => {
+    const x = side === "L" ? PL : PR, y = Y(i), on = used.has(side + i), bad = FORBID.has(n);
+    el("rect", { x: x - 6, y: y - 6, width: 12, height: 12, rx: 2, fill: on ? v("--pad") : "transparent", stroke: v("--pad"), "stroke-width": 1.5 }, b);
+    if (bad) { el("path", { d: `M${x - 5} ${y - 5}L${x + 5} ${y + 5}M${x + 5} ${y - 5}L${x - 5} ${y + 5}`, stroke: v("--forbid"), "stroke-width": 2 }, b); }
+    el("text", { x: side === "L" ? x + 14 : x - 14, y: y + 4, "text-anchor": side === "L" ? "start" : "end",
+      class: bad ? "t-forbid" : on ? "t-pcb" : "t-dim", "font-weight": on ? 600 : 400 }, b, n);
+  });
+  pinRow(LEFT, "L"); pinRow(RIGHT, "R");
+  el("text", { x: PR - 14, y: Y(14) + 18, "text-anchor": "end", class: "t-dim", "font-size": 9 }, b, "LED บนบอร์ด");
+
+  // ---------- parts ----------
+  const groups = {};
+  function part(c) {
+    const g = el("g", { class: "c", "data-k": c.k, tabindex: 0, role: "img", "aria-label": `${c.pin}: ${c.lab}` });
+    groups[c.k] = g;
+    const y = Y(c.row), col = v(c.col), L = c.side === "L";
+    const pinX = L ? PL : PR;
+    if (L) {
+      const cx = 250;                                     // part centre
+      const sigX = cx + 26, gndX = cx - 26;
+      el("path", { d: `M${sigX} ${y}H${pinX}`, class: "wire sig", stroke: col }, g);
+      el("text", { x: sigX + 14, y: y - 7, class: "lab", fill: col }, g, c.lab);
+      el("text", { x: sigX + 14, y: y + 16, class: "sub" }, g, c.sub);
+      if (c.kind === "pot") {
+        el("path", { d: `M${gndX} ${y - 9}H${V33}`, class: "wire", stroke: v("--v33") }, g);
+        el("path", { d: `M${gndX} ${y + 9}H${GNDL}`, class: "wire", stroke: v("--gnd") }, g);
+        el("circle", { cx: V33, cy: y - 9, r: 4.5, fill: v("--v33"), class: "node" }, g);
+        el("circle", { cx: GNDL, cy: y + 9, r: 4.5, fill: v("--gnd"), class: "node" }, g);
+        el("rect", { x: cx - 26, y: y - 15, width: 52, height: 30, rx: 5, fill: v("--panel"), stroke: v("--pot"), "stroke-width": 1.6 }, g);
+        el("circle", { cx, cy: y, r: 9, fill: v("--soft"), stroke: v("--pot"), "stroke-width": 1.6 }, g);
+        el("line", { x1: cx, y1: y, x2: cx + 5, y2: y - 7, stroke: v("--pot"), "stroke-width": 2 }, g);
+      } else {
+        el("path", { d: `M${gndX} ${y + 9}H${GNDL}`, class: "wire", stroke: v("--gnd") }, g);
+        el("circle", { cx: GNDL, cy: y + 9, r: 4.5, fill: v("--gnd"), class: "node" }, g);
+        el("rect", { x: cx - 16, y: y - 16, width: 32, height: 32, rx: 4, fill: v("--panel"), stroke: col, "stroke-width": 1.6 }, g);
+        el("rect", { x: cx - 8, y: y - 8, width: 16, height: 16, rx: 3, fill: col, opacity: .85 }, g);
+        el("path", { d: `M${cx - 16} ${y + 9}H${gndX}M${cx + 16} ${y}H${sigX}`, stroke: col, "stroke-width": 1.6 }, g);
+        el("text", { x: gndX - 3, y: y + 24, "text-anchor": "end", class: "sub" }, g, "กลาง");
+      }
+    } else {
+      const cx = 960, sigX = cx - 30, gndX = cx + 30;
+      el("path", { d: `M${pinX} ${y}H${sigX}`, class: "wire sig", stroke: col }, g);
+      el("text", { x: sigX - 12, y: y - 7, "text-anchor": "end", class: "lab", fill: col }, g, c.lab);
+      el("text", { x: sigX - 12, y: y + 16, "text-anchor": "end", class: "sub" }, g, c.sub);
+      el("path", { d: `M${gndX} ${y + 9}H${GNDR}`, class: "wire", stroke: v("--gnd") }, g);
+      el("circle", { cx: GNDR, cy: y + 9, r: 4.5, fill: v("--gnd"), class: "node" }, g);
+      el("rect", { x: cx - 14, y: y - 14, width: 28, height: 28, rx: 3, fill: v("--panel"), stroke: col, "stroke-width": 1.6 }, g);
+      el("circle", { cx, cy: y, r: 7.5, fill: col, opacity: .85 }, g);
+      // four legs, the two used ones on the diagonal
+      el("path", { d: `M${cx - 14} ${y - 9}H${sigX}`, stroke: col, "stroke-width": 1.6 }, g);
+      el("path", { d: `M${cx + 14} ${y + 9}H${gndX}`, stroke: col, "stroke-width": 1.6 }, g);
+      el("path", { d: `M${cx - 14} ${y + 9}h-6M${cx + 14} ${y - 9}h6`, stroke: v("--muted"), "stroke-width": 1.2, opacity: .6 }, g);
+      el("circle", { cx: sigX, cy: y, r: 0.1, fill: "none" }, g);
+      el("path", { d: `M${sigX} ${y - 9}V${y}`, stroke: col, "stroke-width": 1.6 }, g);
+    }
+    el("circle", { cx: pinX, cy: y, r: 4.5, fill: col, class: "node" }, g);
+  }
+  function power(c) {
+    const g = el("g", { class: "c", "data-k": c.k, tabindex: 0, role: "img", "aria-label": `${c.pin}: ${c.lab}` });
+    groups[c.k] = g;
+    const y = Y(c.row), col = v(c.col);
+    const pinX = c.side === "L" ? PL : PR, rail = c.k === "v3" ? V33 : c.side === "L" ? GNDL : GNDR;
+    el("path", { d: `M${pinX} ${y}H${rail}`, class: "wire", stroke: col }, g);
+    el("circle", { cx: rail, cy: y, r: 4.5, fill: col, class: "node" }, g);
+    el("circle", { cx: pinX, cy: y, r: 4.5, fill: col, class: "node" }, g);
+    const tx = c.side === "L" ? 360 : 800;
+    el("text", { x: tx, y: y - 7, "text-anchor": "middle", class: "lab", fill: col }, g, c.lab);
+  }
+  P.forEach(power);
+  C.forEach(part);
+  el("text", { x: 250, y: Y(16) + 10, "text-anchor": "middle", class: "sub" }, svg, "ซ้าย: pot 4 ตัว · สวิตช์ 7×7 ตัวสีฟ้า 5 ตัว");
+  el("text", { x: 960, y: Y(16) + 10, "text-anchor": "middle", class: "sub" }, svg, "ขวา: ปุ่ม 6×6 ตัวดำ 6 ตัว");
+
+  // ---------- checklist ----------
+  const ORDER = ["gl", "gr", "v3", "r1", "r2", "r3", "r4", "al", "c1", "c2", "c3", "c4", "gd", "rj", "p1", "p2", "p3", "p4"];
+  const ALL = Object.fromEntries(C.concat(P).map((c) => [c.k, c]));
+  const KEY = "esp32-wiring-done-v1";
+  let done = {};
+  try { done = JSON.parse(localStorage.getItem(KEY)) || {}; } catch {}
+  const save = () => { try { localStorage.setItem(KEY, JSON.stringify(done)); } catch {} };
+  const tbody = document.getElementById("rows");
+  ORDER.forEach((k) => {
+    const c = ALL[k];
+    const tr = document.createElement("tr");
+    tr.className = "row"; tr.dataset.k = k;
+    const part = c.kind === "pot" ? "pot (ขากลาง)" : c.kind === "latch" ? "สวิตช์ 7×7 (ขาริม)" : c.kind === "tact" ? "ปุ่ม 6×6 (ขาทแยง)" : "สายจัมเปอร์";
+    tr.innerHTML = `<td><input type="checkbox" id="chk-${k}" aria-label="${c.pin} เสร็จแล้ว"></td><td class="pin"></td><td class="sw"><i></i></td><td></td><td></td>`;
+    tr.children[1].textContent = c.pin;
+    tr.children[2].lastChild.after(document.createTextNode(c.lab + " · " + part));
+    tr.children[2].firstChild.style.background = v(c.col);
+    tr.children[3].textContent = c.fn;
+    tr.children[4].textContent = c.other;
+    const box = tr.querySelector("input");
+    box.checked = !!done[k];
+    box.addEventListener("change", () => { done[k] = box.checked; save(); paint(); });
+    tr.addEventListener("mouseenter", () => focus(k));
+    tr.addEventListener("mouseleave", () => focus(null));
+    tbody.appendChild(tr);
+  });
+  function paint() {
+    let n = 0;
+    ORDER.forEach((k) => {
+      const on = !!done[k]; if (on) n++;
+      tbody.querySelector(`tr[data-k="${k}"]`).classList.toggle("done", on);
+      groups[k]?.classList.toggle("done", on);
+    });
+    document.getElementById("progress").innerHTML = `เสียบแล้ว <b>${n}</b> / ${ORDER.length} เส้น`;
+  }
+  function focus(k) {
+    svg.classList.toggle("focus", !!k);
+    Object.entries(groups).forEach(([gk, g]) => g.classList.toggle("hl", gk === k));
+    tbody.querySelectorAll("tr").forEach((tr) => tr.classList.toggle("hl", tr.dataset.k === k));
+  }
+  Object.entries(groups).forEach(([k, g]) => {
+    g.addEventListener("mouseenter", () => focus(k));
+    g.addEventListener("mouseleave", () => focus(null));
+    g.addEventListener("focus", () => focus(k));
+    g.addEventListener("blur", () => focus(null));
+  });
+  document.getElementById("reset").addEventListener("click", () => { done = {}; save(); tbody.querySelectorAll("input").forEach((b) => (b.checked = false)); paint(); });
+  paint();
+})();
+</script>
+
+</body></html>

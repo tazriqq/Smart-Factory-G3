@@ -1,0 +1,21 @@
+{
+  "mcpServers": {
+    "oee-db": {
+      "command": "docker",
+      "args": [
+        "run",
+        "-i",
+        "--rm",
+        "--network",
+        "host",
+        "-e",
+        "DATABASE_URI",
+        "crystaldba/postgres-mcp:0.3.0",
+        "--access-mode=restricted"
+      ],
+      "env": {
+        "DATABASE_URI": "postgresql://reader:PG_READER_PASS_from_server_.env@localhost:5432/factory"
+      }
+    }
+  }
+}
