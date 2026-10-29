@@ -806,7 +806,8 @@ const tabs = document.createElement('div');
 tabs.className = 'lf-tabs'; tabs.setAttribute('role', 'tablist');
 tabs.innerHTML = '<button role="tab" type="button" data-tab="line" aria-selected="true">▦ Line <kbd>1</kbd></button>'
   + '<button role="tab" type="button" data-tab="oee" aria-selected="false">◔ OEE Dashboard <kbd>2</kbd></button>';
-document.body.prepend(tabs);
+// in the header bar, next to the title: small, but the selected tab stands out (dark, blue underline)
+(document.querySelector('.dash-title') ? document.querySelector('.dash-title').after(tabs) : document.body.prepend(tabs));
 const od = document.createElement('section');
 od.className = 'od'; od.hidden = true; od.setAttribute('role', 'tabpanel'); od.setAttribute('aria-label', 'OEE dashboard');
 const SER = ['var(--s1)', 'var(--s2)', 'var(--s3)', 'var(--s4)'];
