@@ -39,6 +39,8 @@ flowchart LR
         gf["Grafana"]
         ss["sheets-sync"]
         web["nginx<br/>หน้าเว็บ · /mqtt · /mqtt-view · /pair"]
+        bk["backup<br/>สำรอง database ทุกวัน"]
+        pw["pgweb<br/>ดู database ในเว็บ"]
     end
 
     ctl["หน้า control<br/>(กี่เครื่องก็ได้)"]
@@ -53,6 +55,8 @@ flowchart LR
     tg --> ifx --> gf
     pg --> ss -- HTTPS --> gs
     pg -. "อ่านอย่างเดียว" .-> claude
+    pg --> bk
+    pg -. "อ่านอย่างเดียว" .-> pw
     ctl -- "คำสั่ง (control/set)" --> mq
     mq <--> hub
     mq -- "ค่าจริง + ข้อมูลบอร์ด" --> ctl
@@ -68,6 +72,7 @@ flowchart LR
 - **control-hub** ถือค่าควบคุมจริงไว้ที่ server ที่เดียว หน้า control ทุกเครื่องเห็นค่าเดียวกัน หน้า OEE ทุกจอทำตาม และบันทึกการกดบนเว็บลง database เป็น `source = website`
 - **sheets-sync** ส่งสรุป OEE และ Events ขึ้น Google Sheet
 - **หน้า OEE** รับข้อมูลผ่าน MQTT ช่องอ่านอย่างเดียว (`/mqtt-view`) จึงไม่ต้องใส่รหัส และส่งคำสั่งไม่ได้
+- **backup** สำรอง database เป็นไฟล์ทุกวัน · **pgweb** เปิดดูตาราง / รัน SELECT ในเว็บ (อ่านอย่างเดียว เปิดได้เฉพาะบนเครื่อง server)
 
 ---
 
@@ -84,9 +89,10 @@ flowchart LR
 │   │   ├── control-hub/         ← ค่าควบคุมจริง + รหัสจับคู่ 5 ตัว
 │   │   ├── nginx/               ← เว็บ + ส่งต่อ /mqtt, /mqtt-view, /pair
 │   │   ├── postgres/            ← ตาราง, view OEE
-│   │   ├── telegraf/            ← MQTT → database
+│   │   ├── telegraf/            ← MQTT → database + watchdog.sh
 │   │   ├── sheets-sync/         ← database → Google Sheet
-│   │   └── grafana/
+│   │   ├── grafana/
+│   │   └── backups/             ← ไฟล์สำรอง database รายวัน (ไม่ขึ้น GitHub)
 │   ├── website/                 ← index.html (OEE), control.html, wiring-map.html
 │   ├── esp32/                   ← โค้ดบอร์ด + build_web.py (ฝังหน้าเว็บลงบอร์ด)
 │   └── google-sheets/           ← Apps Script (sheets_webapp.gs)
@@ -132,7 +138,7 @@ cp .env.example .env          # Windows PowerShell: copy .env.example .env
 ### 1.3 เปิดระบบ
 ```bash
 docker compose up -d --build      # ครั้งแรกโหลด image ราว 1–2 GB
-docker compose ps                 # ต้องขึ้นครบ 9 ตัว: mosquitto web timescaledb influxdb telegraf grafana sheets-sync control-hub backup
+docker compose ps                 # ต้องขึ้นครบ 10 ตัว: mosquitto web timescaledb influxdb telegraf grafana sheets-sync control-hub backup pgweb
 ```
 
 ### 1.4 หา IP ของเครื่อง server
@@ -280,17 +286,20 @@ database ──► sheets-sync (บน server) ──HTTPS + SHEETS_KEY──►
 | `oee` | `http://localhost:8080` | `http://web:80` |
 | `control` | `http://localhost:8080` | `http://web:80` |
 | `grafana` | `http://localhost:3000` | `http://grafana:3000` |
+| `sql` (ไม่บังคับ, pgweb) | `http://localhost:8081` | `http://pgweb:8081` |
 
 - ใช้ tunnel ที่มีอยู่แล้ว (เช่นของแอปอื่น) ได้เลย แค่ใช้ subdomain ไม่ซ้ำกัน · หรือใช้ cloudflared ใน compose: ใส่ `CLOUDFLARE_TUNNEL_TOKEN` ใน `.env` แล้ว `docker compose --profile tunnel up -d`
 - oee กับ control ใช้พอร์ต 8080 ร่วมกัน โดย nginx เลือกหน้าตามชื่อ domain
 
 **Cache:** Caching → Cache Rules → *Bypass cache* สำหรับ `oee.<domain>` และ `control.<domain>` (ไม่อย่างนั้นแก้หน้าเว็บแล้ว Cloudflare ยังส่งไฟล์เก่า)
 
-**Cloudflare Access (แนะนำมาก):** Access → Applications → Add → Self-hosted → ใส่ `oee`, `control`, `grafana` → Policy *Allow · Emails* = อีเมลคนในทีม → login ด้วยรหัสทางอีเมล
+**Cloudflare Access (แนะนำมาก):** Access → Applications → Add → Self-hosted → ใส่ `oee`, `control`, `grafana` → Policy *Allow · Emails* = อีเมลคนในทีม → login ด้วยรหัสทางอีเมล · `sql` ให้ทำ application แยก ที่อนุญาตเฉพาะอีเมลของคุณเอง (เห็นข้อมูลทุกตาราง)
 
 ---
 
-## 8. ให้ Claude อ่าน database (MCP, ไม่บังคับ)
+## 8. ดู database และให้ Claude อ่าน (ไม่บังคับ)
+
+- **pgweb (ในเบราว์เซอร์):** `http://127.0.0.1:8081` บนเครื่อง server · ดูตาราง / view แล้วรัน `SELECT` ได้ · อ่านอย่างเดียว 2 ชั้น (login เป็น `reader` และรันทุกคำสั่งแบบ read only) · เปลี่ยนพอร์ตได้ที่ `SQL_PORT` ใน `.env` · เปิดจากข้างนอกผ่าน `sql.<domain>` ได้ (ข้อ 7)
 
 - **Claude Code บนเครื่อง server:** ในโฟลเดอร์ `OEE-System` copy `.mcp.example.json` เป็น `.mcp.json` ใส่ `PG_READER_PASS` → เปิด `claude` ในโฟลเดอร์นั้น → `/mcp`
 - **Claude Desktop:** Settings → Developer → Edit Config → server `oee-db` ใช้ `uvx postgres-mcp --access-mode=restricted` กับ `DATABASE_URI=postgresql://reader:<PG_READER_PASS>@<SERVER_IP>:5432/factory`
@@ -319,11 +328,11 @@ docker compose exec timescaledb psql -U factory_admin -d factory -c "SELECT max(
 ```
 ถ้า `esp32/` เปลี่ยน ให้อัปโหลดโค้ดบอร์ดใหม่ · ถ้า `google-sheets/` เปลี่ยน ให้อัปเดต Apps Script
 
-**สำรองข้อมูลอัตโนมัติ:** service `backup` ทำ `server/backups/factory-YYYY-MM-DD.dump` ทุกวัน (ตอนเปิดและทุก 24 ชั่วโมง) เก็บย้อนหลัง `BACKUP_KEEP_DAYS` วัน (ค่าเริ่มต้น 14) · **คัดลอกโฟลเดอร์นี้และไฟล์ `.env` ไปเก็บนอกเครื่องเป็นระยะ** (ไม่อยู่ใน GitHub) · สำรองเองทันที: `docker compose exec -T timescaledb pg_dump -U factory_admin -Fc factory > factory.dump` · restore บนเครื่องใหม่: ดู [`OEE-System/README.md`](OEE-System/README.md)
+**สำรองข้อมูลอัตโนมัติ:** service `backup` ทำ `server/backups/factory-YYYY-MM-DD.dump` ทุกวัน (ตอนเปิดและทุก 24 ชั่วโมง) เก็บย้อนหลัง `BACKUP_KEEP_DAYS` วัน (ค่าเริ่มต้น 14) · **คัดลอกโฟลเดอร์นี้และไฟล์ `.env` ไปเก็บนอกเครื่องเป็นระยะ** (ไม่อยู่ใน GitHub) · สำรองเองทันที: `docker compose exec -T timescaledb pg_dump -U factory_admin -Fc factory > factory.dump` · restore บนเครื่องใหม่: ดู [`OEE-System/README.md`](OEE-System/README.md#สำรอง--restore-database) · ถ้าสำรองไม่สำเร็จ (เช่น database ยังเปิดไม่เสร็จหลังรีบูต) จะลองใหม่ทุก 5 นาที · ดู: `docker compose logs backup`
 
 **ตัวเฝ้าระวัง Telegraf:** `telegraf/watchdog.sh` รีสตาร์ต Telegraf เองเมื่อบอร์ดออนไลน์แต่ข้อมูลไม่เข้าเกิน `WATCHDOG_STALL_S` วินาที (ค่าเริ่มต้น 180) · ดู: `docker compose logs telegraf | grep watchdog`
 
-**พอร์ตที่เปิดให้เครื่องอื่น:** 1883 (บอร์ด), 8080 (เว็บ), 3000 (Grafana), 5432 (PostgreSQL สำหรับ Claude Desktop จากเครื่องอื่น) · 9001 (MQTT WebSocket) และ InfluxDB เปิดเฉพาะบนเครื่อง server · หน้าเว็บต่อ MQTT ผ่าน nginx ที่ `/mqtt` / `/mqtt-view`
+**พอร์ตที่เปิดให้เครื่องอื่น:** 1883 (บอร์ด), 8080 (เว็บ), 3000 (Grafana), 5432 (PostgreSQL สำหรับ Claude Desktop จากเครื่องอื่น) · 9001 (MQTT WebSocket), 8081 (pgweb) และ InfluxDB เปิดเฉพาะบนเครื่อง server · หน้าเว็บต่อ MQTT ผ่าน nginx ที่ `/mqtt` / `/mqtt-view`
 
 ---
 
@@ -341,7 +350,7 @@ docker compose exec timescaledb psql -U factory_admin -d factory -c "SELECT max(
 | Serial Monitor: `MQTT: failed (state 4)` | รหัสผิด | `SECRET_MQTT_PASS` ต้องเท่ากับ `MQTT_ESP32_PASS` |
 | รหัส 5 ตัวขึ้น `too many wrong codes` | เดาผิดเกิน 10 ครั้ง | รอ 10 นาที หรือ `docker compose restart control-hub` |
 | `sheets-sync` ขึ้น failed | ไม่มีเน็ต / Apps Script ตั้งไม่ครบ | Deploy เป็น Who has access: Anyone · ไม่ใช้ชีตให้เว้น `SHEETS_URL=` |
-| `port is already allocated` | โปรแกรมอื่นใช้พอร์ต | แก้พอร์ตใน `.env` (`WEB_PORT`, `PG_PORT`, `INFLUX_PORT` …) |
+| `port is already allocated` | โปรแกรมอื่นใช้พอร์ต | แก้พอร์ตใน `.env` (`WEB_PORT`, `PG_PORT`, `INFLUX_PORT`, `SQL_PORT` …) |
 
 ---
 

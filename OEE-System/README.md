@@ -2,17 +2,20 @@
 
 ```
                     เครื่อง server (คอม / Raspberry Pi ที่เปิดทิ้งไว้) ── docker compose
-                    ┌──────────────────────────────────────────────────────────────────────┐
-ESP32 ──MQTT:1883──►│ Mosquitto ──┬──ws (nginx /mqtt)──► หน้าเว็บ (http://<server>:8080) │
-                    │             └──► Telegraf ──┬──► PostgreSQL/TimescaleDB :5432 ◄── Claude (MCP) │  ← ที่เก็บหลัก
-                    │                             └──► InfluxDB ──► Grafana :3000              │
-                    │  sheets-sync: ทุก 15 นาที อ่านสรุป OEE จาก PostgreSQL ──HTTPS──┐            │
-                    └──────────────────────────────────────────────────────────────│───────┘
-                                                Google Sheet (สรุป OEE) ◄──────────┘ ──► Claude บน claude.ai
+                    ┌───────────────────────────────────────────────────────────────────────────────┐
+ESP32 ──MQTT:1883──►│ Mosquitto ──┬── nginx :8080 ──► หน้าเว็บ  OEE (/mqtt-view) · control (/mqtt)       │
+                    │             ├──► control-hub ──► Mosquitto (ค่าควบคุมจริงของหน้า control ที่เดียว)      │
+                    │             └──► Telegraf ──┬──► PostgreSQL/TimescaleDB :5432 ◄── Claude (MCP)       │ ← ที่เก็บหลัก
+                    │                             │        ├──► backup (ไฟล์ .dump ทุกวัน)                │
+                    │                             │        └──► pgweb :8081 (ดูในเว็บ, อ่านอย่างเดียว)       │
+                    │                             └──► InfluxDB ──► Grafana :3000                       │
+                    │  sheets-sync: อ่านสรุปจาก PostgreSQL ──HTTPS──┐  (+ รายงานประจำวันไป LINE)          │
+                    └───────────────────────────────────────────────│───────────────────────────────┘
+                                    Google Sheet (สรุป OEE) ◄────────┘ ──► Claude บน claude.ai
 ```
 - **PostgreSQL คือที่เก็บข้อมูลหลัก** — ทุกสัญญาณ ทุก event ทุกนาที + คำนวณ OEE ใน database (view `oee_daily`, `oee_hourly`, function `oee()`)
-- **Google Sheet เก็บแค่สรุป** (OEE รายวัน / รายชั่วโมง) ที่ server ส่งขึ้นไปให้ — แก้ในชีตไม่มีผล
-- ESP32 ส่งทุกอย่างผ่าน MQTT **ในวง Wi-Fi เดียวกัน** (ไม่ต้องใช้อินเทอร์เน็ต) — มีแค่ sheets-sync ที่ต้องใช้อินเทอร์เน็ต
+- **Google Sheet เก็บแค่สรุป** (OEE รายวัน / รายชั่วโมง, Events, Products, Daily_Report) ที่ server ส่งขึ้นไปให้ — แก้ในชีตไม่มีผล
+- ESP32 ส่งทุกอย่างผ่าน MQTT **ในวง Wi-Fi เดียวกัน** (ไม่ต้องใช้อินเทอร์เน็ต) — ที่ต้องใช้อินเทอร์เน็ตมีแค่ sheets-sync (ชีต + LINE) และ Cloudflare Tunnel (เปิดจากข้างนอก)
 - เครื่อง server ตอนนี้คือ `192.168.1.107`
 
 ไฟล์ในโฟลเดอร์นี้
@@ -34,15 +37,20 @@ OEE-System/
 ├── google-sheets/
 │   └── sheets_webapp.gs                       ← โค้ด Google Apps Script (รับสรุปจาก server มาเขียนลงชีต)
 └── server/                                    ← ทุกอย่างที่รันบนเครื่อง server (Docker)
-    ├── docker-compose.yml                     ← Mosquitto + เว็บ + PostgreSQL + InfluxDB + Telegraf + Grafana + sheets-sync
+    ├── docker-compose.yml                     ← 10 service: mosquitto, web (nginx), timescaledb, influxdb, telegraf, grafana,
+    │                                             sheets-sync, control-hub, backup, pgweb (+ cloudflared ถ้าใช้ --profile tunnel)
     ├── .env                                   ← 🔒 รหัสผ่านทั้งหมด (สุ่มไว้แล้ว, ไม่ขึ้น GitHub)
     ├── .env.example                           ← แม่แบบของ .env
-    ├── mosquitto/                             ← ตั้งค่า broker + สิทธิ์ผู้ใช้ (acl)
+    ├── mosquitto/                             ← ตั้งค่า broker + สิทธิ์ผู้ใช้ (acl, acl_view)
+    ├── nginx/default.conf                     ← หน้าเว็บ + ส่งต่อ /mqtt, /mqtt-view, /pair · เลือกหน้า OEE / control ตามชื่อ domain
+    ├── control-hub/hub.py                     ← ค่าควบคุมจริงของหน้า control + รหัสจับคู่ 5 ตัว
     ├── postgres/schema.sql                    ← ตาราง, view OEE, ผู้ใช้ (สร้างตอนเปิดครั้งแรก)
     ├── postgres/init.sh                       ← รัน schema.sql พร้อมรหัสจาก .env
-    ├── sheets-sync/                           ← ส่งสรุป OEE จาก database ขึ้น Google Sheet
+    ├── sheets-sync/sync.py                    ← ส่งสรุปจาก database ขึ้น Google Sheet + รายงานประจำวันไป LINE
     ├── telegraf/telegraf.conf                 ← รับ MQTT แล้วเขียนลง PostgreSQL + InfluxDB
-    └── grafana/                               ← เชื่อม InfluxDB + dashboard "Smart Factory · Line 1"
+    ├── telegraf/watchdog.sh                   ← รีสตาร์ต Telegraf เองเมื่อข้อมูลบอร์ดไม่เข้า
+    ├── grafana/                               ← เชื่อม InfluxDB + dashboard "Smart Factory · Line 1"
+    └── backups/                               ← 🔒 ไฟล์สำรอง database รายวัน (ไม่ขึ้น GitHub)
 ```
 (Arduino IDE ต้องการให้ไฟล์ `.ino` อยู่ในโฟลเดอร์ชื่อเดียวกัน จึงมีโฟลเดอร์ `SmartFactoryBoard_MQTT` ซ้อนอยู่)
 
@@ -61,12 +69,12 @@ OEE-System/
 
 ---
 
-## 1. เครื่อง server (Mosquitto + เว็บ + PostgreSQL + InfluxDB + Grafana)
+## 1. เครื่อง server (docker compose)
 1. ติดตั้ง Docker (Linux / Docker Desktop / Raspberry Pi 4-5 OS 64-bit)
 2. `cd server` → ถ้ายังไม่มี `.env`: `cp .env.example .env` แล้วตั้งรหัสผ่านทุกช่อง
    (เครื่องนี้มี `.env` ที่สุ่มรหัสไว้แล้ว และตั้ง `INFLUX_PORT=8087` เพราะ InfluxDB ตัวเดิมใช้ 8086 อยู่)
-3. `docker compose up -d`
-4. เปิดใช้ได้จากทุกเครื่องใน Wi-Fi เดียวกัน
+3. `docker compose up -d --build` → `docker compose ps` ต้องขึ้นครบ 10 ตัว
+4. เปิดใช้ได้จากทุกเครื่องใน Wi-Fi เดียวกัน (pgweb เปิดได้เฉพาะบนเครื่อง server)
 
 | อะไร | ที่อยู่ | login |
 |---|---|---|
@@ -75,11 +83,13 @@ OEE-System/
 | MQTT (ESP32) | `192.168.1.107:1883` | user `esp32` + `MQTT_ESP32_PASS` |
 | MQTT WebSocket | `ws://192.168.1.107:8080/mqtt` (nginx → Mosquitto 9001, ซึ่งเปิดเฉพาะบนเครื่อง server) | user `web` |
 | PostgreSQL | `192.168.1.107:5432` database `factory` | `reader` + `PG_READER_PASS` (อ่านอย่างเดียว) · `factory_admin` + `PG_ADMIN_PASSWORD` (แก้ได้ทุกอย่าง) |
+| pgweb (database ในเว็บ) | `http://127.0.0.1:8081` (บนเครื่อง server เท่านั้น) | ไม่ต้อง login · ล็อกเป็น `reader` + read only |
 
 **ผู้ใช้ MQTT** (สร้างจาก `.env` ทุกครั้งที่เปิด, สิทธิ์ใน `server/mosquitto/acl`)
 - `esp32` — ส่งข้อมูลได้ (บอร์ด)
-- `web` — ดูได้อย่างเดียว (หน้าเว็บ, Telegraf) → ถ้ารหัสนี้หลุด คนอื่นก็ปลอมข้อมูลไม่ได้
-- ไม่มีรหัส = เข้าไม่ได้
+- `web` — อ่านทุก topic ของไลน์ (หน้า control, Telegraf) และเขียนได้เฉพาะคำสั่ง: `…/route/set`, `…/control/set`, `…/control/pair` → ถ้ารหัสนี้หลุด คนอื่นสั่งไลน์จำลองได้ แต่ปลอมข้อมูลบอร์ดหรือเขียน database ไม่ได้
+- `hub` — control-hub: เขียนค่าควบคุมจริง (`…/control`) และบันทึกการกดบนเว็บเป็น event `source = website`
+- ไม่มีรหัส = เข้าได้เฉพาะช่องอ่านอย่างเดียว (listener 9002, `acl_view`) ที่หน้า OEE ใช้ผ่าน `/mqtt-view`
 
 **⚠ ล็อก IP ของเครื่อง server** — ตอนนี้ได้ IP จาก DHCP (`192.168.1.107`) ถ้าเปลี่ยน ESP32 จะหา broker ไม่เจอ
 → เข้าหน้าเราเตอร์ (ปกติ `http://192.168.1.1`) → DHCP → **Address Reservation / Static Lease** → จอง `192.168.1.107` ให้เครื่องนี้
@@ -89,14 +99,15 @@ OEE-System/
 1. สร้าง Google Sheet ใหม่ ตั้งชื่อเช่น `DPX OEE Log` (ใช้ชีตเดิมก็ได้)
 2. เมนู **Extensions → Apps Script** → ลบโค้ดเดิม วางทั้งไฟล์ `google-sheets/sheets_webapp.gs`
 3. Save → ⚙ **Project Settings** → **Script properties** → Property `KEY` = รหัสเดียวกับ `SHEETS_KEY` ใน `server/.env`
-4. เลือกฟังก์ชัน **setup** → **Run** → อนุญาตสิทธิ์ → ได้แท็บ `Events`, `OEE_Daily`, `OEE_Hourly`, `Machines`, `Notes`
+4. เลือกฟังก์ชัน **setup** → **Run** → อนุญาตสิทธิ์ → ได้แท็บ `Events`, `OEE_Daily`, `OEE_Hourly`, `Products`, `Daily_Report`, `Machines`, `Notes`
    (แท็บเก่า `Minute`, `Settings` ไม่ใช้แล้ว ลบทิ้งได้ · แท็บ `Events` เก่าจะถูกเขียนทับด้วยรูปแบบใหม่เอง)
 5. Deploy
    - ครั้งแรก: **Deploy → New deployment → Web app** — Execute as: **Me** · Who has access: **Anyone** → คัดลอก URL (`/exec`) ใส่ `SHEETS_URL` ใน `server/.env`
    - เคย deploy แล้ว: **Deploy → Manage deployments → ✏️ Edit → Version: New version → Deploy** (URL เดิม)
 6. `cd server && docker compose up -d sheets-sync` → `docker compose logs sheets-sync` ควรเห็น `sheets-sync: … ok N rows`
 
-- server ส่ง **ทุก 15 นาที** (`SHEETS_EVERY_MIN`) และเขียนทับทั้งแท็บ → ชีตตรงกับ database เสมอ, ไม่มีวันเต็ม
+- server ส่ง **ทุก 15 นาที** (`SHEETS_EVERY_MIN`, แท็บ Events ภายใน ~10 วินาทีหลังมี event) และเขียนทับทั้งแท็บ → ชีตตรงกับ database เสมอ, ไม่มีวันเต็ม
+- รายงานประจำวันไป LINE (`REPORT_AT`, `LINE_CHANNEL_TOKEN`): วิธีตั้งค่าอยู่ใน [`README.md`](../README.md) ข้อ 6
 - ไม่ใส่ `SHEETS_URL` = ปิดการส่งขึ้นชีต (database ยังทำงานปกติ)
 
 ## 3. บอร์ด ESP32 (`esp32/SmartFactoryBoard_MQTT/secrets.h`)
@@ -164,7 +175,7 @@ OEE-System/
 ### PostgreSQL / TimescaleDB (ที่เก็บหลัก, database `factory`)
 | ชื่อ | ชนิด | 1 แถว = | เก็บ |
 |---|---|---|---|
-| `events` | ตาราง | 1 สัญญาณ: `machine` (0 = ทั้งไลน์), `event` = part, output, run_on/off, door_open/close, alarm_on/off, good, reject, boot, route · `product` = A / B · `route` (เฉพาะ event route) | ตลอดไป |
+| `events` | ตาราง | 1 สัญญาณ: `machine` (0 = ทั้งไลน์), `event` = part, output, run_on/off, door_open/close, alarm_on/off, good, reject, boot, route · จากหน้า control เพิ่ม setup_on/off, maintenance_on/off, product_info, oee_clear, use_board / use_simulator · `product` = A / B · `route` (เฉพาะ event route) · `source` = board / website | ตลอดไป |
 | `minutes` | ตาราง | 1 เครื่อง / 1 นาที: `product`, `run_s`, `stop_s`, `alarm_s`, `parts`, `speed_pct` | ตลอดไป |
 | `board` | ตาราง | ข้อความสดจากบอร์ด (~1 ครั้ง/วินาที) `pot_0..3 run_0..3 door_0..3 al cnt_0..3 good rej ms` | 365 วัน (บีบอัดหลัง 7 วัน) |
 | `board_status` | ตาราง | online / offline ของบอร์ด | ตลอดไป |
@@ -172,6 +183,7 @@ OEE-System/
 | `oee_daily` | view | OEE 1 เครื่อง (+ product ที่ทำ) / 1 วัน (วันที่ไทย) | คำนวณสดทุกครั้ง |
 | `product_daily` | view | 1 product / 1 วัน: `output`, `good`, `reject`, `quality` | คำนวณสดทุกครั้ง |
 | `route_history` | view | ทุกครั้งที่เปลี่ยนเส้นทาง: เวลา + เครื่องของ A / B | — |
+| `product_info` | view | รหัส + ชื่อสินค้าล่าสุดของ A / B (ตั้งในหน้า control) | — |
 | `oee_hourly` | view | OEE 1 เครื่อง / 1 ชั่วโมง ย้อนหลัง 30 วัน | คำนวณสดทุกครั้ง |
 | `oee(bucket, since, until, bucket_offset)` | function | OEE ช่วงเวลาใดก็ได้ เช่น กะ 08-20 / 20-08: `oee('12 hours', bucket_offset => '8 hours')` | — |
 | `line_status` | view | บอร์ด online ไหม + ข้อมูลล่าสุดเข้ามาเมื่อไร | — |
@@ -193,7 +205,8 @@ OEE-System/
 | Events | กดปุ่ม / สวิตช์ 500 ครั้งล่าสุด (ใหม่สุดอยู่บน) · คอลัมน์ `source` = `board` (กดบนบอร์ด) หรือ `website` (กดบนหน้า control; OEE คิดจากบอร์ดอย่างเดียว) — ขึ้นชีตภายใน ~10 วินาทีหลังกด (`SHEETS_EVENTS_ROWS`, `SHEETS_EVENTS_GAP_S`) |
 | OEE_Daily | view `oee_daily` ทั้งหมด |
 | OEE_Hourly | `oee('1 hour')` ย้อนหลัง 14 วัน (`SHEETS_HOURLY_DAYS`) |
-| Products | view `product_daily` ทั้งหมด (ต้องใช้ `sheets_webapp.gs` ตัวใหม่) |
+| Products | view `product_daily` ทั้งหมด พร้อมรหัส / ชื่อสินค้า |
+| Daily_Report | สรุปประจำวันสำหรับผู้บริหาร 1 แถวต่อวัน (ข้อความเดียวกับที่ส่ง LINE) |
 | Machines | ตาราง `machines` |
 | Notes | คำอธิบายแต่ละแท็บ + เวลาอัปเดตล่าสุด |
 
@@ -221,7 +234,22 @@ docker compose down                  # หยุด (ข้อมูลยัง
 ```
 แก้รหัส MQTT ใน `.env` แล้ว → `docker compose up -d` (Mosquitto สร้างรหัสใหม่เอง) และแก้ `secrets.h` ของบอร์ดให้ตรง
 
+## สำรอง / restore database
+service `backup` สร้าง `server/backups/factory-YYYY-MM-DD.dump` ทุกวัน (ตอนเปิดและทุก 24 ชั่วโมง ถ้าไม่สำเร็จลองใหม่ทุก 5 นาที) เก็บ `BACKUP_KEEP_DAYS` วัน · ไฟล์นี้กับ `.env` ไม่ขึ้น GitHub ให้คัดลอกไปเก็บนอกเครื่องเอง
+
+**restore** (ในโฟลเดอร์ `server/`, เครื่องใหม่ให้ `docker compose up -d` ครั้งแรกก่อน เพื่อสร้างผู้ใช้ database):
+```bash
+docker compose stop telegraf sheets-sync backup pgweb             # ไม่ให้มีใครเขียน / ต่อ database ระหว่าง restore
+P() { docker compose exec -T timescaledb "$@"; }
+P psql -U factory_admin -d postgres -c "DROP DATABASE factory" -c "CREATE DATABASE factory"
+P psql -U factory_admin -d factory -c "CREATE EXTENSION IF NOT EXISTS timescaledb" -c "SELECT timescaledb_pre_restore()"
+P pg_restore -U factory_admin -d factory < backups/factory-YYYY-MM-DD.dump  # ข้อความเตือนเรื่อง circular / hypertable ไม่เป็นไร
+P psql -U factory_admin -d factory -c "SELECT timescaledb_post_restore()"
+docker compose up -d
+```
+แล้วเช็ก: `P psql -U factory_admin -d factory -c "SELECT count(*) FROM events"`
+
 ## ขึ้น GitHub
 repo: https://github.com/tazriqq/Smart-Factory-G3 · วิธี clone ไปใช้บนเครื่องใหม่ดูที่ [`README.md`](../README.md) นอกสุด
-- `.gitignore` กัน `secrets.h`, `server/.env` และ `.mcp.json` ไว้แล้ว — ก่อน push ให้ดู `git status` ทุกครั้ง
+- `.gitignore` กัน `secrets.h`, `server/.env`, `.mcp.json` และ `server/backups/` ไว้แล้ว — ก่อน push ให้ดู `git status` ทุกครั้ง
 - รหัส MQTT ของหน้าเว็บไม่ได้อยู่ในโค้ด — ผู้ใช้พิมพ์เอง และจำไว้ในเบราว์เซอร์ของเครื่องนั้นเท่านั้น
