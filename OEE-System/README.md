@@ -110,7 +110,7 @@ OEE-System/
 6. `cd server && docker compose up -d sheets-sync` → `docker compose logs sheets-sync` ควรเห็น `sheets-sync: … ok N rows`
 
 - server ส่ง **ทุก 15 นาที** (`SHEETS_EVERY_MIN`, แท็บ Events ภายใน ~10 วินาทีหลังมี event) และเขียนทับทั้งแท็บ → ชีตตรงกับ database เสมอ, ไม่มีวันเต็ม
-- รายงานประจำวันไป LINE (`REPORT_AT`, `LINE_CHANNEL_TOKEN`): วิธีตั้งค่าอยู่ใน [`README.md`](../README.md) ข้อ 6
+- รายงานประจำวันไป LINE (`REPORT_AT`, `LINE_CHANNEL_TOKEN`): วิธีตั้งค่าอยู่ใน [`README-full.md`](../README-full.md) ข้อ 6
 - ไม่ใส่ `SHEETS_URL` = ปิดการส่งขึ้นชีต (database ยังทำงานปกติ)
 
 ## 3. บอร์ด ESP32 (`esp32/SmartFactoryBoard_MQTT/secrets.h`)
@@ -149,7 +149,7 @@ OEE-System/
 ## 4. หน้าเว็บ
 - **OEE** `http://192.168.1.107:8080` แสดงผลอย่างเดียว ไม่ต้อง login (MQTT ช่องอ่านอย่างเดียวที่ `/mqtt-view`)
 - **Control** `http://192.168.1.107:8080/control.html` login ด้วย user `web` + `MQTT_WEB_PASS` ครั้งแรก (หรือรหัสจับคู่ 5 ตัวจากเครื่องที่ login แล้ว) · ค่าควบคุมจริงอยู่ที่ `control-hub`
-- วิธีใช้ทั้งหมด: [`README.md`](../README.md) ข้อ 3–5
+- วิธีใช้ทั้งหมด: [`README.md`](../README.md) (สั้น) · [`README-full.md`](../README-full.md) ข้อ 3–5 (ละเอียด)
 
 ## 5. ให้ Claude วิเคราะห์
 ### ทางหลัก: Claude อ่าน database ผ่าน MCP (ละเอียดที่สุด)
@@ -255,6 +255,6 @@ docker compose up -d
 แล้วเช็ก: `P psql -U factory_admin -d factory -c "SELECT count(*) FROM events"`
 
 ## ขึ้น GitHub
-repo: https://github.com/tazriqq/Smart-Factory-G3 · วิธี clone ไปใช้บนเครื่องใหม่ดูที่ [`README.md`](../README.md) นอกสุด
+repo: https://github.com/tazriqq/Smart-Factory-G3 · วิธี clone ไปใช้บนเครื่องใหม่ดูที่ [`README-full.md`](../README-full.md) ข้อ 1
 - `.gitignore` กัน `secrets.h`, `server/.env`, `.mcp.json` และ `server/backups/` ไว้แล้ว — ก่อน push ให้ดู `git status` ทุกครั้ง
 - รหัส MQTT ของหน้าเว็บไม่ได้อยู่ในโค้ด — ผู้ใช้พิมพ์เอง และจำไว้ในเบราว์เซอร์ของเครื่องนั้นเท่านั้น
