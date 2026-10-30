@@ -316,6 +316,7 @@ function followControl(m) {
   controlSrc = m.src === "sim" || m.src === "board" ? m.src : null;
   if (m.items) window.__line?.setItems?.(m.items, m.line, m.lineName);   // what is being made, whichever source drives the line
   if (m.shift) window.oee?.applySettings?.(m.shift);          // the shift and time frame, set on the control page
+  if (m.links) window.oee?.setLinks?.(m.links);               // the server's extra links (LINKS in server/.env)
   if (lastControl && lastControl.id === m.id && (m.clear >>> 0) > (lastControl.clear >>> 0)) window.oee?.clear?.();
   if (controlSrc === "board") { lastControl = m; return; }
   if (controlSrc === "sim" && window.__board.live) window.__board.stop();   // let go of the board at once
@@ -331,6 +332,7 @@ function followControl(m) {
   const L = window.__line;
   if (typeof m.route === "string") L?.setRouteText?.(m.route);
   if (Array.isArray(m.setup)) for (let i = 0; i < 4; i++) L?.setSetup?.(i, !!m.setup[i]);
+  if (Array.isArray(m.maint)) for (let i = 0; i < 4; i++) L?.setMaint?.(i, !!m.maint[i]);
   if (m.sim) { L?.setRunning?.(m.sim.run !== 0); if (m.sim.speed) L?.setSpeed?.(m.sim.speed); }
   if (q) {
     // QC per product (the control page's GOOD / REJECT for A and B); what is left of the totals: the latest product

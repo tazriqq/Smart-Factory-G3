@@ -151,6 +151,7 @@ services:
       MQTT_PASS: ${MQTT_HUB_PASS}
       LINE_ID: ${LINE_ID}
       LINE_NAME: ${LINE_NAME:-}   # what the pages and the reports call the line, e.g. BU 3
+      LINKS: ${LINKS:-}           # extra links on the pages: name|url;name|url (e.g. the Google Sheet)
       MQTT_WEB_PASS: ${MQTT_WEB_PASS}   # handed out once per pairing code (GET /pair/<code>)
 
   sheets-sync:

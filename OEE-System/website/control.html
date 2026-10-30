@@ -122,6 +122,13 @@ body:not([data-mode="monitor"]) .mon{display:none!important}
 .sw{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .sw .btn{width:100%}
 .sw .btn.wide{grid-column:1/-1}
+.sw .btn[data-f="door"]{grid-column:1/-1}
+.sw .btn[data-f="stop"][aria-pressed="true"]{background:var(--red);color:#fff}
+.sw .btn[data-f="run"][aria-pressed="true"]{background:var(--green);color:#fff}
+.state[data-s="maint"]{background:var(--amber-bg);color:var(--amber)}
+.state[data-s="maint"] i{background:#f5a218}
+.links{display:flex;flex-wrap:wrap;gap:6px 14px;margin-left:auto;font:12px var(--mono)}
+.links a{color:var(--blue)}
 .state[data-s="setup"]{background:var(--amber-bg);color:var(--amber)}
 .state[data-s="setup"] i{background:#f5c518}
 /* products: routes */
@@ -267,7 +274,7 @@ main>*{min-width:0}
       <h1>Line control</h1>
       <p class="sub">ESP32 offline: ควบคุมไลน์จากหน้านี้ · ESP32 online: ดูสัญญาณทุกตัวที่บอร์ดส่งเข้ามา</p>
     </div>
-    <a id="dash" href="/">OEE dashboard ↗</a>
+    <nav class="links" id="links" aria-label="Links"><a id="dash" href="/" target="_blank" rel="noopener">OEE dashboard ↗</a></nav>
   </header>
 
   <section class="card" aria-label="Connection">
@@ -422,9 +429,11 @@ $("machines").innerHTML = MACHINES.map((m, i) => `
     <div class="m-h"><b>M${i + 1}</b><span>${m.no} ${m.name}</span></div>
     <div class="state" data-s="off"><i></i><span data-f="st">—</span><small data-f="since"></small></div>
     <div class="sw ctl">
-      <button class="btn" data-f="run" type="button" aria-pressed="true">RUN</button>
+      <button class="btn" data-f="run" type="button" aria-pressed="true">▶ RUN</button>
+      <button class="btn" data-f="stop" type="button" aria-pressed="false">■ STOP</button>
       <button class="btn" data-f="door" type="button" aria-pressed="false">🚪 เปิดฝา</button>
-      <button class="btn wide" data-f="setup" type="button" aria-pressed="false">🔧 Set / Maintenance</button>
+      <button class="btn" data-f="setup" type="button" aria-pressed="false">🔧 Set-up</button>
+      <button class="btn" data-f="maint" type="button" aria-pressed="false">🛠 Maintenance</button>
     </div>
     <div class="mon"><div class="k">parts finished</div>
       <div class="count"><b data-f="cnt">—</b><span data-f="gap"></span></div></div>
@@ -538,14 +547,14 @@ function onBoard(text) {
    dashboard's simulated line only (the board has no such switches). */
 const ME = Math.random().toString(36).slice(2, 10);
 const ctl = { pot: [512, 512, 512, 512], run: [1, 1, 1, 1], door: [0, 0, 0, 0], al: 0, good: 0, rej: 0, undo: 0, reset: 0,
-  setup: [0, 0, 0, 0], sim: { run: 1, speed: 4 }, route: "1234-", useBoard: 1,
+  setup: [0, 0, 0, 0], maint: [0, 0, 0, 0], sim: { run: 1, speed: 4 }, route: "1234-", useBoard: 1,
   items: { A: { code: "", name: "" }, B: { code: "", name: "" } },
   qc: { A: { good: 0, rej: 0 }, B: { good: 0, rej: 0 } },
   shift: { start: "08:00", work: 8, bstart: "12:00", blen: 60, cycle: 120, clock: "demo", win: "shift", from: "08:00", to: "17:00" },
   clear: 0 };   // what this page shows
 let S = null, dragging = -1, sendTimer = 0;   // S: the hub's state as last received
 const sent = {};                              // values sent but not yet back from the hub
-const KEYS = () => [0, 1, 2, 3].flatMap((i) => ["pot", "run", "door", "setup"].map((k) => [`${k}.${i}`, ctl[k][i], S[k][i]]))
+const KEYS = () => [0, 1, 2, 3].flatMap((i) => ["pot", "run", "door", "setup", "maint"].map((k) => [`${k}.${i}`, ctl[k][i], (S[k] || [])[i]]))
   .concat([["al", ctl.al, S.al], ["useBoard", ctl.useBoard, S.useBoard], ["route", ctl.route, S.route], ["sim.run", ctl.sim.run, S.sim.run], ["sim.speed", ctl.sim.speed, S.sim.speed]])
   .concat(["A", "B"].flatMap((p) => ["code", "name"].map((f) => [`item.${p}.${f}`, ctl.items[p][f], ((S.items || {})[p] || {})[f] ?? ""])))
   .concat(Object.keys(ctl.shift).map((f) => [`shift.${f}`, ctl.shift[f], (S.shift || {})[f]]));
@@ -577,7 +586,8 @@ function logOther(a, b) {
   for (let i = 0; i < 4; i++) {
     if (a.run[i] !== b.run[i]) event(`M${i + 1} run switch ${b.run[i] ? "ON" : "OFF"}${from}`, b.run[i] ? "g" : "");
     if (a.door[i] !== b.door[i]) event(`M${i + 1} door ${b.door[i] ? "open" : "closed"}${from}`, b.door[i] ? "" : "g");
-    if (a.setup[i] !== b.setup[i]) event(`M${i + 1} ${b.setup[i] ? "set-up / maintenance" : "back in production"}${from}`, "n");
+    if (a.setup[i] !== b.setup[i]) event(`M${i + 1} ${b.setup[i] ? "set-up" : "set-up done"}${from}`, "n");
+    if (b.maint && a.maint && a.maint[i] !== b.maint[i]) event(`M${i + 1} ${b.maint[i] ? "maintenance" : "maintenance done"}${from}`, "n");
     if (pctOf(a.pot[i]) !== pctOf(b.pot[i]) && dragging !== i) event(`M${i + 1} speed ${pctOf(b.pot[i])} %${from}`, "n");
   }
   if (a.al !== b.al) event((b.al ? "ALARM ON" : "alarm cleared") + from, b.al ? "r" : "g");
@@ -595,7 +605,7 @@ function onState(text) {
   if (S) for (const [k, t, c] of [["undo", "QC undo last", "n"], ["reset", "line reset", "r"]])
     if (m[k] > ctl[k]) event(`${t}${k === "good" || k === "rej" ? " → " + m[k] : ""} · from another device`, c);
   S = m;
-  for (const k of ["run", "door", "setup"]) ctl[k] = m[k].slice();
+  for (const k of ["run", "door", "setup", "maint"]) if (Array.isArray(m[k])) ctl[k] = m[k].slice();
   ctl.pot = m.pot.map((v, i) => (i === dragging ? ctl.pot[i] : v));
   for (const k of ["al", "useBoard", "route", "good", "rej", "undo", "reset"]) ctl[k] = m[k];
   ctl.sim = { ...m.sim };
@@ -605,6 +615,7 @@ function onState(text) {
     if (document.activeElement !== box) ctl.items[p][f] = ((m.items || {})[p] || {})[f] || "";
   }
   if (m.line) $("rt-line").textContent = m.lineName || m.line;
+  if (m.links) showLinks(m.links);
   if (m.shift) {
     if (S && S.shift && JSON.stringify(S.shift) !== JSON.stringify(m.shift) && m.last && m.last.by !== ME && m.last.ok) event("shift / time frame changed · from another device", "n");
     for (const f in m.shift) { const box = document.querySelector(`.sh-form [data-s="${f}"]`); if (document.activeElement !== box) ctl.shift[f] = m.shift[f]; }
@@ -625,13 +636,15 @@ function renderCtl() {
   showAlarm(!!ctl.al);
   MACHINES.forEach((_, i) => {
     const c = cards[i], pct = pctOf(ctl.pot[i]);
-    c.run.setAttribute("aria-pressed", String(!!ctl.run[i])); c.run.textContent = ctl.run[i] ? "RUN" : "STOP";
+    c.run.setAttribute("aria-pressed", String(!!ctl.run[i])); c.stop.setAttribute("aria-pressed", String(!ctl.run[i]));
+    c.maint.setAttribute("aria-pressed", String(!!ctl.maint[i]));
     c.door.setAttribute("aria-pressed", String(!!ctl.door[i])); c.door.textContent = ctl.door[i] ? "🚪 ปิดฝา" : "🚪 เปิดฝา";
     c.setup.setAttribute("aria-pressed", String(!!ctl.setup[i]));
     if (+c.slider.value !== pct) c.slider.value = pct;
     c.spd.textContent = pct + " %"; c.raw.textContent = ctl.pot[i];
     showState(c, i, !!ctl.run[i], !!ctl.door[i], !!ctl.al, pct, now);
-    if (ctl.setup[i] && !ctl.al) { c.state.dataset.s = "setup"; c.st.textContent = "SET / MAINTENANCE"; }
+    if (ctl.maint[i] && !ctl.al) { c.state.dataset.s = "maint"; c.st.textContent = "MAINTENANCE"; }
+    else if (ctl.setup[i] && !ctl.al) { c.state.dataset.s = "setup"; c.st.textContent = "SET-UP"; }
   });
   showQc(ctl.good, ctl.rej, "—");
   if (typeof BD === "function") BD(ctl);
@@ -639,9 +652,11 @@ function renderCtl() {
   document.querySelectorAll(".sim [data-speed]").forEach((b) => b.setAttribute("aria-pressed", String(+b.dataset.speed === ctl.sim.speed)));
 }
 cards.forEach((c, i) => {
-  c.run.addEventListener("click", () => { ctl.run[i] = ctl.run[i] ? 0 : 1; sendCtl(`M${i + 1} run switch ${ctl.run[i] ? "ON" : "OFF"}`, ctl.run[i] ? "g" : ""); });
+  c.run.addEventListener("click", () => { if (ctl.run[i]) return; ctl.run[i] = 1; sendCtl(`M${i + 1} RUN`, "g"); });
+  c.stop.addEventListener("click", () => { if (!ctl.run[i]) return; ctl.run[i] = 0; sendCtl(`M${i + 1} STOP`, "r"); });
   c.door.addEventListener("click", () => { ctl.door[i] = ctl.door[i] ? 0 : 1; sendCtl(`M${i + 1} door ${ctl.door[i] ? "open" : "closed"}`, ctl.door[i] ? "" : "g"); });
-  c.setup.addEventListener("click", () => { ctl.setup[i] = ctl.setup[i] ? 0 : 1; sendCtl(`M${i + 1} ${ctl.setup[i] ? "set-up / maintenance" : "back in production"}`, ctl.setup[i] ? "" : "g"); });
+  c.setup.addEventListener("click", () => { ctl.setup[i] = ctl.setup[i] ? 0 : 1; sendCtl(`M${i + 1} ${ctl.setup[i] ? "set-up" : "set-up done"}`, ctl.setup[i] ? "" : "g"); });
+  c.maint.addEventListener("click", () => { ctl.maint[i] = ctl.maint[i] ? 0 : 1; sendCtl(`M${i + 1} ${ctl.maint[i] ? "maintenance" : "maintenance done"}`, ctl.maint[i] ? "" : "g"); });
   c.slider.addEventListener("input", () => { dragging = i; ctl.pot[i] = potOf(+c.slider.value); sendCtl(); });
   c.slider.addEventListener("change", () => { dragging = -1; event(`M${i + 1} speed ${c.slider.value} %`, "n"); });
 });
@@ -678,6 +693,17 @@ $("oee-clear").addEventListener("click", (e) => {
   press("clear"); sendCtl("OEE record cleared on every dashboard", "r");
 });
 renderShift();
+
+// links in the header: the dashboard, Grafana, the wiring map, and the server's own (LINKS in server/.env)
+let shownLinks = "";
+const DASH_URL = $("dash").href;   // set above: oee.<domain>, or the server's own page
+function showLinks(extra) {
+  const grafana = /^control\./.test(location.hostname) ? `${location.protocol}//${location.hostname.replace(/^control\./, "grafana.")}/` : `${location.protocol}//${location.hostname || "192.168.1.107"}:3000/`;
+  const all = [{ name: "OEE dashboard", url: DASH_URL }, ...(extra || []), { name: "Grafana", url: grafana }, { name: "Wiring map", url: "wiring-map.html" }];
+  const html = all.map((l) => `<a href="${String(l.url).replace(/"/g, "&quot;")}" target="_blank" rel="noopener">${String(l.name).replace(/</g, "&lt;")} ↗</a>`).join("");
+  if (html !== shownLinks) { $("links").innerHTML = shownLinks = html; }
+}
+showLinks([]);
 
 // QC per product: a GOOD / REJECT pair for each product that has machines on its route
 $("qcp-rows").innerHTML = ["A", "B"].map((P) => `<div class="qcp-row" data-p="${P}">

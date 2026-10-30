@@ -198,8 +198,9 @@ const slots = MACHINES.map((m, i) => {
   el('polygon', { points: [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, b]) => S(m.u + (a < 0 ? -m.ru - PAD : m.ru + FRONT), m.v + (b < 0 ? -m.rv - PAD : m.rv + FRONT)).map((n) => n.toFixed(1)).join(',')).join(' ') }, pad);
   // label lying on the floor in the pad's front strip, starting just past the middle (where a belt may leave)
   const lines = [el('text', {}, pad), el('text', {}, pad)];
-  const padLabel = (setup) => {
-    const rows = setup ? [['SET /', 40], ['MAINTENANCE', 40]] : [['DOWN', 84], ['', 0]];
+  // the floor pad's word: DOWN, SET-UP or MAINTENANCE
+  const padLabel = (kind) => {
+    const rows = kind === 'maint' ? [['MAINTE-', 48], ['NANCE', 48]] : kind ? [['SET-UP', 56], ['', 0]] : [['DOWN', 84], ['', 0]];
     let dv = m.rv + 16;
     rows.forEach(([txt, fs], k) => {
       dv += fs * 0.8 + (k ? 14 : 0);
@@ -470,13 +471,17 @@ const G = (i) => (window.__gate ? window.__gate(i) : 1);
 // a machine in set-up / maintenance (toggled on its tag) stands still, but isn't "down"
 window.__setup = MACHINES.map(() => false);
 const SU = (i) => !!window.__setup[i];
+// in maintenance (from the control page): stands still too, and isn't "down" either
+window.__maint = MACHINES.map(() => false);
+const MT = (i) => !!window.__maint[i];
 // its door slid open to load material: it stands still too, and isn't "down" either
 const DR = (i) => !!window.__door[i];
-const spOf = (i) => (SU(i) || DR(i) ? 0 : (window.__speeds[i] || 0) * G(i));
+const spOf = (i) => (SU(i) || MT(i) || DR(i) ? 0 : (window.__speeds[i] || 0) * G(i));
 // no part has come in yet: the machine's drawing stands still until one arrives
 window.__idle = (i) => st[i]?.mode === 'starved';
 function stopWhy(i) {
-  if (SU(i)) return 'set-up / maintenance';
+  if (MT(i)) return 'maintenance';
+  if (SU(i)) return 'set-up';
   if (DR(i)) return 'door open · loading material';
   const b = BOARD();
   const s = b && (b.live ? b : b.local);
@@ -583,7 +588,7 @@ function ntAlert(event, i, text, extra) {
 setInterval(() => {
   const now = Date.now();
   MACHINES.forEach((m, i) => {
-    const a = ntStop[i], stopped = spOf(i) === 0 && !SU(i) && !DR(i);   // planned set-up / maintenance or loading doesn't page anyone
+    const a = ntStop[i], stopped = spOf(i) === 0 && !SU(i) && !MT(i) && !DR(i);   // planned set-up / maintenance or loading doesn't page anyone
     if (stopped) {
       if (!a.at) a.at = now;
       else if (!a.sent && now - a.at >= nt.min * 60000) {
@@ -673,11 +678,12 @@ function render() {
     const sp = spOf(i);
     s.dot.className = sp === 0 ? 'stopped' : x.mode;
     s.pad.classList.toggle('on', sp === 0 && !open);
-    s.pad.classList.toggle('setup', SU(i));
-    if (s.setup !== SU(i)) s.padLabel((s.setup = SU(i)));
-    if (SU(i) || open) s.dot.className = 'setup';
+    const plan = MT(i) ? 'maint' : SU(i) ? 'setup' : '';   // planned stops: amber, not DOWN
+    s.pad.classList.toggle('setup', !!plan);
+    if (s.setup !== plan) s.padLabel((s.setup = plan));
+    if (plan || open) s.dot.className = 'setup';
     const bd = BOARD(), bl = bd && (bd.live ? bd : bd.local);
-    s.andon.set(SU(i) || open ? 'amber' : sp === 0 ? 'red' : x.mode === 'run' ? 'green' : 'amber', sp === 0 && !!bl?.al);
+    s.andon.set(plan || open ? 'amber' : sp === 0 ? 'red' : x.mode === 'run' ? 'green' : 'amber', sp === 0 && !!bl?.al);
     s.dot.title = sp === 0 ? stopWhy(i) : { run: 'running', starved: 'waiting for a part', blocked: 'waiting for room on the belt' }[x.mode];
     s.spd.textContent = Math.round(sp * 100) + '%';
     s.bar.style.width = Math.min(100, sp * 50) + '%';
@@ -1189,7 +1195,7 @@ window.__line = { MACHINES, BELTS, slots, placeTags, fit, oeeOf, speedChanged() 
     const b = BOARD(), s = b && (b.live ? b : b.local);
     if (s && s.al) return 'ALARM · E-stop';
     if (!boardLive() && !running) return 'simulation paused';
-    const why = (i) => SU(i) ? 'set-up / maintenance' : DR(i) ? 'door open' : s && !s.run[i] ? 'run switch off' : 'speed 0 %';
+    const why = (i) => MT(i) ? 'maintenance' : SU(i) ? 'set-up' : DR(i) ? 'door open' : s && !s.run[i] ? 'STOP' : 'speed 0 %';
     return ROUTE.flat().filter((i) => spOf(i) === 0).map((i) => `${MACHINES[i].no} ${why(i)}`).join(' · ');
   },
   // a QC press for product p (0 = A, 1 = B) from the control page: its piles, and the OEE panel's count
@@ -1204,6 +1210,7 @@ window.__line = { MACHINES, BELTS, slots, placeTags, fit, oeeOf, speedChanged() 
     if (name !== undefined) LINE_NAME = name;
     showLineName();
   },
+  setMaint(i, on) { if (slots[i]) window.__maint[i] = !!on; },
   setSetup(i, on) { if (!slots[i] || !!window.__setup[i] === !!on) return; window.__setup[i] = !!on; slots[i].tag.querySelector('.tg-ma').setAttribute('aria-pressed', String(!!on)); },
   toggleDoor(i) { const s = slots[i]; if (s && !boardLive() && s.door.can()) s.door.toggle(); } };
 

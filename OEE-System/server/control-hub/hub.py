@@ -42,10 +42,14 @@ PASS = os.environ["MQTT_PASS"]
 BASE = os.environ.get("LINE_TOPIC", "group3/dpx/line1")
 LINE_ID = os.environ.get("LINE_ID", BASE.rsplit("/", 1)[-1])
 LINE_NAME = os.environ.get("LINE_NAME", "").strip() or LINE_ID   # what the pages call the line, e.g. "BU 3"
+# links the pages show (LINKS in server/.env, kept out of git): "Google Sheet|https://...;Other|https://..."
+LINKS = [{"name": n.strip(), "url": u.strip()} for n, _, u in (x.partition("|") for x in os.environ.get("LINKS", "").split(";"))
+         if n.strip() and u.strip().startswith(("https://", "http://"))]
 T_STATE, T_SET, T_BOARD = BASE + "/control", BASE + "/control/set", BASE + "/board"
 T_PAIR, T_EVENTS = BASE + "/control/pair", BASE + "/events"
 PRESS_EVENT = {"good": "good", "rej": "reject", "undo": "undo", "reset": "reset", "clear": "oee_clear"}
-SWITCH_EVENT = {"run": ("run_on", "run_off"), "door": ("door_open", "door_close"), "setup": ("setup_on", "setup_off")}
+SWITCH_EVENT = {"run": ("run_on", "run_off"), "door": ("door_open", "door_close"), "setup": ("setup_on", "setup_off"),
+                "maint": ("maintenance_on", "maintenance_off")}
 outbox = []   # event rows to post (on_command runs inside the MQTT callback)
 WEB_USER, WEB_PASS = "web", os.environ.get("MQTT_WEB_PASS", "")
 PAIR_TTL_S, PAIR_HTTP_PORT = 600, 8090
@@ -60,7 +64,8 @@ state = {
     "pot": [512, 512, 512, 512], "run": [1, 1, 1, 1], "door": [0, 0, 0, 0], "setup": [0, 0, 0, 0], "al": 0,
     "sim": {"run": 1, "speed": 4}, "route": "1234-", "useBoard": 1,
     "good": 0, "rej": 0, "undo": 0, "reset": 0,
-    "items": {"A": {"code": "", "name": ""}, "B": {"code": "", "name": ""}}, "line": LINE_ID, "lineName": LINE_NAME,
+    "items": {"A": {"code": "", "name": ""}, "B": {"code": "", "name": ""}}, "line": LINE_ID, "lineName": LINE_NAME, "links": LINKS,
+    "maint": [0, 0, 0, 0],   # maintenance per machine (setup = set-up / changeover), both stand the machine still
     "qc": {"A": {"good": 0, "rej": 0}, "B": {"good": 0, "rej": 0}},   # QC presses per product (good / rej = all)
     # the OEE panel of every dashboard: shift, ideal cycle, clock (demo = 1 s is 1 min), time frame; clear = counter
     "shift": {"start": "08:00", "work": 8, "bstart": "12:00", "blen": 60, "cycle": 120, "clock": "demo",
@@ -98,7 +103,7 @@ def valid(key, value):
         value = "".join(ch for ch in value if ch.isprintable()).strip()
         return value[: 20 if field == "code" else 60]
     name, _, idx = key.partition(".")
-    if name in ("pot", "run", "door", "setup"):
+    if name in ("pot", "run", "door", "setup", "maint"):
         if not idx.isdigit() or int(idx) > 3:
             return None
         if name == "pot":
@@ -124,7 +129,7 @@ def put(key, value):
         state["items"][p][field] = value
         return
     name, _, idx = key.partition(".")
-    if name in ("pot", "run", "door", "setup"):
+    if name in ("pot", "run", "door", "setup", "maint"):
         state[name][int(idx)] = value
     elif name == "sim":
         state["sim"][idx] = value
@@ -168,7 +173,7 @@ def on_command(m):
     elif name == "shift":
         before = state["shift"][idx]
     else:
-        before = state[name][int(idx)] if name in ("pot", "run", "door", "setup") else state["sim"][idx] if name == "sim" else state[key]
+        before = state[name][int(idx)] if name in ("pot", "run", "door", "setup", "maint") else state["sim"][idx] if name == "sim" else state[key]
     put(key, value)
     if before != value and name == "item":
         it = state["items"][idx.split(".")[0]]
@@ -269,7 +274,7 @@ def on_message(client, _userdata, msg):
     elif msg.topic == T_STATE and not restored:
         # the retained state from before a restart (or from an older control page): carry on from it
         restored = True
-        for k in ("pot", "run", "door", "setup"):
+        for k in ("pot", "run", "door", "setup", "maint"):
             if isinstance(m.get(k), list) and len(m[k]) == 4:
                 state[k] = [valid(f"{k}.{i}", x) if valid(f"{k}.{i}", x) is not None else state[k][i] for i, x in enumerate(m[k])]
         for k in ("al", "useBoard", "route", "good", "rej", "undo", "reset", "id"):

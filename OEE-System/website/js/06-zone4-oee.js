@@ -396,7 +396,31 @@
     save(); render();
   };
   const clearRecord = () => { log = { segs: [], parts: [] }; if (isDemo()) startDemo(); else store.del(LOG); render(); };
-  window.oee = { applySettings, clear: clearRecord, measure: () => { const t = now(); const sh = shiftOf(t); const w = windowOf(t, sh); return measure(t, sh, w.w0, w.w1); }, log: () => log, now,
+  // ───────── links: the other pages, and the server's own (LINKS in server/.env, e.g. the Google Sheet) ─────────
+  const linkBox = document.createElement("nav");
+  linkBox.className = "oee-links"; linkBox.setAttribute("aria-label", "Links");
+  root.append(linkBox);
+  const sub = (name) => /^oee\./.test(location.hostname) ? `${location.protocol}//${location.hostname.replace(/^oee\./, name + ".")}/` : null;
+  const BASIC = [
+    { icon: "🎛", name: "Control", note: "ดูสัญญาณ / ควบคุม", url: sub("control") || "control.html" },
+    { icon: "📈", name: "Grafana", note: "กราฟสัญญาณสด", url: sub("grafana") || `${location.protocol}//${location.hostname || "192.168.1.107"}:3000/` },
+    { icon: "🔌", name: "Wiring map", note: "แผนผังต่อสายบอร์ด", url: "wiring-map.html" },
+    { icon: "📟", name: "Board", note: "หน้าเว็บในบอร์ด · Wi-Fi เดียวกัน", url: "http://192.168.1.200/" },
+    { icon: "💻", name: "GitHub", note: "คู่มือ / โค้ด", url: "https://github.com/tazriqq/Smart-Factory-G3" },
+  ];
+  const ICON = { "google sheet": "📊", sheet: "📊" };
+  let extra = [];
+  function drawLinks() {
+    const all = [...extra.map((l) => ({ icon: ICON[l.name.toLowerCase()] || "🔗", note: /docs\.google\.com\/spreadsheets/.test(l.url) ? "สรุป OEE / Events / Daily report" : "", ...l })), ...BASIC]
+      .filter((l, i, a) => a.findIndex((x) => x.name.toLowerCase() === l.name.toLowerCase()) === i);
+    const esc = (t) => String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
+    linkBox.innerHTML = `<span class="oee-group-name">Links</span>` + all.map((l) =>
+      `<a href="${esc(l.url)}" target="_blank" rel="noopener"><i>${l.icon}</i><b>${esc(l.name)}</b>${l.note ? `<small>${esc(l.note)}</small>` : ""}</a>`).join("");
+  }
+  drawLinks();
+  const setLinks = (list) => { const k = JSON.stringify(list); if (k === JSON.stringify(extra)) return; extra = Array.isArray(list) ? list : []; drawLinks(); };
+
+  window.oee = { applySettings, setLinks, clear: clearRecord, measure: () => { const t = now(); const sh = shiftOf(t); const w = windowOf(t, sh); return measure(t, sh, w.w0, w.w1); }, log: () => log, now,
     frame: () => { const t = now(); const w = windowOf(t, shiftOf(t)); return { t, w0: w.w0, w1: w.w1, bad: w.bad, fixed: win === "shift" || win === "custom" }; } };
 })();
 })();

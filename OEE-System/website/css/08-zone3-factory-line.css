@@ -480,3 +480,13 @@ body.phone .lb-now{display:flex;width:100%;margin-top:4px}
 .oz-list{max-height:260px;overflow:auto}
 .oz-list div{display:grid;grid-template-columns:8.5em 6.5em minmax(0,1fr);gap:10px;padding:3px 0;border-bottom:1px solid var(--anatomy-paper)}
 .oz-list b{color:var(--anatomy-strong);font-weight:500}
+/* links under the OEE panel */
+.oee-links{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px;padding-top:10px;margin-top:auto;border-top:1px solid var(--anatomy-lo)}
+.oee-links .oee-group-name{grid-column:1/-1}
+.oee-links a{display:grid;grid-template-columns:auto minmax(0,1fr);column-gap:8px;align-items:center;padding:7px 9px;text-decoration:none;color:var(--anatomy-strong);background:var(--anatomy-paper);box-shadow:inset 0 0 0 1px var(--anatomy-lo)}
+.oee-links a:hover{box-shadow:inset 0 0 0 1px var(--anatomy-strong)}
+.oee-links i{grid-row:span 2;font-style:normal;font-size:16px}
+.oee-links b{font-weight:500;font-size:11.5px}
+.oee-links small{color:var(--anatomy-muted);font-size:9.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dash-oee>.oee{display:flex;flex-direction:column}
+.dash-oee>.oee{padding-bottom:46px}   /* room for the full-screen button under the links */
