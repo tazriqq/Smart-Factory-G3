@@ -1,5 +1,13 @@
 # Smart Factory OEE — Group 3
 
+> **ถ้าเพื่อนอยากลองเล่น เข้า website พวกนี้ได้เลย**
+>
+> - **OEE dashboard:** https://oee.rdeewv.click
+> - **Control:** https://control.rdeewv.click
+> - **Grafana:** https://grafana.rdeewv.click
+>
+> เข้าครั้งแรกจะมีหน้า login ของ Cloudflare ให้ใส่ email แล้วกรอกรหัสที่ส่งไปทาง email
+
 ระบบวัด OEE ของไลน์ผลิตจำลอง 4 เครื่อง บอร์ด ESP32 ส่งสัญญาณผ่าน MQTT ไปที่เครื่อง server ซึ่งเก็บข้อมูลลง database แสดงผลบนหน้าเว็บกับ Grafana และส่งสรุปขึ้น Google Sheet ถ้าไม่มีบอร์ด หน้า **control** จะเป็นบอร์ดจำลองแทน
 
 | หน้า | ที่อยู่ (ผ่าน Cloudflare) | ในวง Wi-Fi | ทำอะไร |
