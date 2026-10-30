@@ -4,6 +4,7 @@
 # Open:   website  http://<this computer>:8080     Grafana  http://<this computer>:3000
 #         MQTT for the ESP32  <this computer>:1883   ·   WebSocket for the website  ws://<this computer>:9001
 #         PostgreSQL  <this computer>:5432  (Claude's MCP logs in as the read-only user "reader")
+#         the database in a web page (pgweb, read only)  http://127.0.0.1:8081  (this computer only)
 #         from anywhere: docker compose --profile tunnel up -d   (Cloudflare Tunnel, CLOUDFLARE_TUNNEL_TOKEN in .env)
 #         (all ports can be changed in .env)
 # Runs on a PC (x86_64) or a Raspberry Pi 4/5 with a 64-bit OS (arm64).
@@ -229,6 +230,22 @@ services:
       INFLUX_TOKEN: ${INFLUX_TOKEN}
       INFLUX_ORG: ${INFLUX_ORG}
       INFLUX_BUCKET: ${INFLUX_BUCKET}
+
+  # the database in a web page (pgweb): browse the tables and views, run SELECTs. Read only twice over: it logs in
+  # as "reader" and runs every query read only; --lock-session keeps it on this database.
+  # On this computer only (127.0.0.1); from anywhere: sql.<your domain> -> http://localhost:8081 in the Cloudflare
+  # tunnel, behind a Cloudflare Access policy that lets in your own email only.
+  pgweb:
+    image: sosedoff/pgweb:0.17.0
+    restart: unless-stopped
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${SQL_PORT:-8081}:8081"
+    environment:
+      PGWEB_DATABASE_URL: postgres://reader:${PG_READER_PASS}@timescaledb:5432/${PG_DB}?sslmode=disable
+    command: ["pgweb", "--bind=0.0.0.0", "--listen=8081", "--readonly", "--lock-session", "--skip-open", "--no-ssh", "--query-timeout=30"]
 
 volumes:
   sheets-state:
