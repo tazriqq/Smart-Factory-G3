@@ -334,18 +334,23 @@ function followControl(m) {
   if (Array.isArray(m.setup)) for (let i = 0; i < 4; i++) L?.setSetup?.(i, !!m.setup[i]);
   if (Array.isArray(m.maint)) for (let i = 0; i < 4; i++) L?.setMaint?.(i, !!m.maint[i]);
   if (m.sim) { L?.setRunning?.(m.sim.run !== 0); if (m.sim.speed) L?.setSpeed?.(m.sim.speed); }
+  // the hub's QC counts are the counts: the same numbers the control page shows, also right after this page opens
+  if (m.qc) L?.qcSet?.(m.qc);
   if (q) {
-    // QC per product (the control page's GOOD / REJECT for A and B); what is left of the totals: the latest product
+    // each new GOOD / REJECT also marks the OEE panel's timeline (undo / reset below take marks back);
+    // what is left of the totals (pages without products): the latest product
     let pg = 0, pr = 0;
     if (m.qc && q.qc) for (const [i, P] of [[0, "A"], [1, "B"]]) {
       const dg = ((m.qc[P] || {}).good >>> 0) - ((q.qc[P] || {}).good >>> 0), dr = ((m.qc[P] || {}).rej >>> 0) - ((q.qc[P] || {}).rej >>> 0);
-      for (let k = 0; k < dg && k < 100; k++) L?.qcPress?.(i, "good");
-      for (let k = 0; k < dr && k < 100; k++) L?.qcPress?.(i, "rej");
+      for (let k = 0; k < dg && k < 1000; k++) L?.qcPress?.(i, "good");
+      for (let k = 0; k < dr && k < 1000; k++) L?.qcPress?.(i, "rej");
       pg += Math.max(0, dg); pr += Math.max(0, dr);
     }
     for (let k = 0; k < (m.good >>> 0) - (q.good >>> 0) - pg && k < 100; k++) window.__qcPress?.("good");
     for (let k = 0; k < (m.rej >>> 0) - (q.rej >>> 0) - pr && k < 100; k++) window.__qcPress?.("reject");
-    for (let k = 0; k < (m.undo >>> 0) - (q.undo >>> 0) && k < 100; k++) document.querySelector('.dash-oee button[data-part="undo"]')?.click();
+    // undo takes back a whole press (n parts): as many marks as the totals went down (an older hub: one per undo)
+    const undos = (m.undo >>> 0) - (q.undo >>> 0), gone = (q.good >>> 0) + (q.rej >>> 0) - (m.good >>> 0) - (m.rej >>> 0);
+    for (let k = 0; undos > 0 && k < (gone > 0 ? gone : undos) && k < 1000; k++) document.querySelector('.dash-oee button[data-part="undo"]')?.click();
     if ((m.reset >>> 0) > (q.reset >>> 0)) L?.reset?.();
   }
   lastControl = m;

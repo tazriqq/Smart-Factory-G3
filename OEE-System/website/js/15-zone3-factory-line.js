@@ -509,15 +509,20 @@ function push(b, stage) {
 }
 // QC presses so far, per product: the board's buttons (the board says which product), or the GOOD / REJECT
 // on screen without a board, which count for the product whose part came off the line most recently
-const qcL = [{ good: 0, rej: 0 }, { good: 0, rej: 0 }], qcSeen = { good: 0, reject: 0 };
+// (once the control hub sends its counts, qcL is the hub's: qcSet; presses then only mark the OEE panel)
+// The hub's counts go back further than this page: what was checked before the page opened (qcBase) counts as
+// output already off the line, so output = qcBase + parts made here, and pile 1 (QC wait) = output - good - scrap.
+const qcL = [{ good: 0, rej: 0 }, { good: 0, rej: 0 }], qcSeen = { good: 0, reject: 0 }, qcBase = [0, 0];
+let hubQc = false;
 function followLocalQc() {
   const l = window.__qcLocal;
   if (!l) return;
-  if (!boardLive()) { qcL[lastOut].good += Math.max(0, l.good - qcSeen.good); qcL[lastOut].rej += Math.max(0, l.reject - qcSeen.reject); }
+  if (!boardLive() && !hubQc) { qcL[lastOut].good += Math.max(0, l.good - qcSeen.good); qcL[lastOut].rej += Math.max(0, l.reject - qcSeen.reject); }
   qcSeen.good = l.good; qcSeen.reject = l.reject;
 }
 const qcOf = (p) => (boardLive() ? BOARD().qcP?.[p] || { good: 0, rej: 0 } : qcL[p]);
 const qc = () => { const a = qcOf(0), b = qcOf(1); return { good: a.good + b.good, rej: a.rej + b.rej }; };
+const outOf = (p) => fin[p] + (boardLive() ? 0 : qcBase[p]);
 function step(dt) {
   simT += dt;
   BELTS.forEach((b) => {
@@ -622,7 +627,7 @@ function reset() {
   BELTS.forEach((b) => { b.parts.forEach((p) => p.g.remove()); b.parts = []; b.box = []; });
   st.forEach((s) => Object.assign(s, { mode: 'starved', t: 0, part: null, done: 0, bad: 0, run: 0, t0: 0, last: 0, wait: 0, block: 0, stop: 0, pulse: 0 }));
   window.__board?.reset();
-  simT = 0; finished = 0; fin[0] = fin[1] = 0; lastOut = ROUTE[0].length ? 0 : 1;
+  simT = 0; finished = 0; fin[0] = fin[1] = 0; qcBase[0] = qcBase[1] = 0; lastOut = ROUTE[0].length ? 0 : 1;
   qcL.forEach((q) => { q.good = q.rej = 0; }); followLocalQc();
   frameSnap = null;
   hist.pts = []; hist.every = 10; hist.next = 0;
@@ -718,9 +723,9 @@ function render() {
   outs.forEach((out) => {
     const nm = itemText(out.p) || `Output ${PRODUCTS[out.p]} · ผลผลิต`;
     if (out.name.textContent !== nm) out.name.textContent = nm;
-    const q = qcOf(out.p), checked = q.good + q.rej, wait = Math.max(0, fin[out.p] - checked);
+    const q = qcOf(out.p), checked = q.good + q.rej, wait = Math.max(0, outOf(out.p) - checked);
     out.stacks(wait, q.good, q.rej);
-    out.tot.textContent = fin[out.p]; out.wait.textContent = wait; out.good.textContent = q.good; out.bad.textContent = q.rej;
+    out.tot.textContent = outOf(out.p); out.wait.textContent = wait; out.good.textContent = q.good; out.bad.textContent = q.rej;
     out.yld.textContent = checked ? Math.round(q.good / checked * 100) + '%' : '—';
     out.ybar.style.width = (checked ? q.good / checked * 100 : 0) + '%';
     out.by.textContent = wait ? `${wait} รอตรวจ · กด GOOD / REJECT เพื่อคัดกอง 1` : checked ? 'ตรวจครบแล้ว' : 'ยังไม่มีชิ้นงานออกจากไลน์';
@@ -890,7 +895,7 @@ function renderDash() {
     ['throughput', simT > 60 ? (finished / (simT / 3600)).toFixed(0) + ' /h' : '—', 'good parts per hour'],
     ['line time', fmt(simT), BB ? (BB.al ? 'ALARM' : 'board · real time') : running ? 'running' : 'paused'],
     ...ROUTE.map((ms, p) => [ms, p]).filter(([ms]) => ms.length).map(([ms, p]) => { const qp = qcOf(p);
-      return [`product ${PRODUCTS[p]}${itemText(p) ? ' · ' + itemText(p) : ''}`, fin[p], `${ms.map((i) => MACHINES[i].no).join(' → ')} · ✓ ${qp.good} · ✕ ${qp.rej}`]; }),
+      return [`product ${PRODUCTS[p]}${itemText(p) ? ' · ' + itemText(p) : ''}`, outOf(p), `${ms.map((i) => MACHINES[i].no).join(' → ')} · ✓ ${qp.good} · ✕ ${qp.rej}`]; }),
   ].map(([k, v, e]) => `<div class="od-kpi"><small>${k}</small><b>${v}</b><em>${e}</em></div>`).join('');
   }
   MACHINES.forEach((m, i) => {
@@ -1090,7 +1095,7 @@ setInterval(() => {
     if (!ms.length) return '';
     const q = qcOf(p), all = q.good + q.rej;
     return `<div class="op-row"><span class="o-p" data-p="${p}">${PRODUCTS[p]}</span><span class="op-name">${itemText(p) || 'product ' + PRODUCTS[p]}<em>${ms.map((i) => MACHINES[i].no).join('→')}</em></span>
-      <span class="op-n"><small>output</small><b>${fin[p]}</b></span><span class="op-n op-g"><small>good</small><b>${q.good}</b></span>
+      <span class="op-n"><small>output</small><b>${outOf(p)}</b></span><span class="op-n op-g"><small>good</small><b>${q.good}</b></span>
       <span class="op-n op-r"><small>scrap</small><b>${q.rej}</b></span><span class="op-n"><small>yield</small><b>${all ? Math.round((q.good / all) * 100) + '%' : '—'}</b></span></div>`;
   }).join('');
   if (prodBox.innerHTML !== html) prodBox.innerHTML = html;
@@ -1233,8 +1238,14 @@ window.__line = { MACHINES, BELTS, slots, placeTags, fit, oeeOf, speedChanged() 
   // a QC press for product p (0 = A, 1 = B) from the control page: its piles, and the OEE panel's count
   qcPress(p, kind) {
     if (boardLive() || !qcL[p]) return;
-    qcL[p][kind === 'good' ? 'good' : 'rej']++;
+    if (!hubQc) qcL[p][kind === 'good' ? 'good' : 'rej']++;
     document.querySelector(`.dash-oee button[data-part="${kind === 'good' ? 'good' : 'bad'}"]`)?.click();
+  },
+  // the control hub's QC counts per product ({A: {good, rej}, B: {...}}): shown as they are
+  qcSet(qc) {
+    if (boardLive()) return;
+    ['A', 'B'].forEach((P, p) => { const x = qc[P] || {}; qcL[p].good = x.good >>> 0; qcL[p].rej = x.rej >>> 0; if (!hubQc) qcBase[p] = qcL[p].good + qcL[p].rej; });
+    hubQc = true;
   },
   setItems(items, line, name) {
     ITEMS = { A: { ...ITEMS.A, ...(items.A || {}) }, B: { ...ITEMS.B, ...(items.B || {}) } };

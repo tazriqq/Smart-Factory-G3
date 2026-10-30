@@ -3,8 +3,10 @@
 # Control pages (any number, any device) send commands to <line>/control/set:
 #   {"cmd":"set","key":"pot.1","value":256,"base":7,"by":"a1b2"}   change one value; base = the version of that
 #                                                                   value the page last saw
-#   {"cmd":"press","key":"good.A","by":"a1b2"}                      good.A / rej.B (QC for that product), undo, reset:
-#                                                                   counted, never conflict
+#   {"cmd":"press","key":"good.A","n":5,"by":"a1b2"}                good.A / rej.B (QC for that product; n parts at once,
+#                                                                   1 if left out), undo, reset: counted, never conflict
+# The QC counts (good / rej, qc per product) are the line's one count: every page shows them as they are. undo takes
+# back the latest GOOD / REJECT press, all n of it (qlog keeps the order, "good.A*5"), reset sets them back to 0.
 # The hub takes them in the order they reach it. A "set" whose value someone else changed after the version the
 # page saw is ignored (the first one wins); the page then shows the hub's value. After every change, and every
 # few seconds, the hub posts the whole state to <line>/control (retained): the control pages show it and the
@@ -48,6 +50,16 @@ LINKS = [{"name": n.strip(), "url": u.strip()} for n, _, u in (x.partition("|") 
 T_STATE, T_SET, T_BOARD = BASE + "/control", BASE + "/control/set", BASE + "/board"
 T_PAIR, T_EVENTS = BASE + "/control/pair", BASE + "/events"
 PRESS_EVENT = {"good": "good", "rej": "reject", "undo": "undo", "reset": "reset", "clear": "oee_clear"}
+QLOG_MAX = 200
+QC_MAX_N = 999   # parts in one press (the control page's number box)
+
+
+def qlog_entry(x):
+    """(key, product, n) of a qlog entry such as "good.A*5", or None"""
+    head, _, n = str(x).partition("*")
+    k, _, p = head.partition(".")
+    n = int(n) if n.isdigit() else 1 if not n else 0
+    return (k, p, n) if k in ("good", "rej") and p in ("", "A", "B") and 1 <= n <= QC_MAX_N else None
 SWITCH_EVENT = {"run": ("run_on", "run_off"), "door": ("door_open", "door_close"), "setup": ("setup_on", "setup_off"),
                 "maint": ("maintenance_on", "maintenance_off")}
 outbox = []   # event rows to post (on_command runs inside the MQTT callback)
@@ -67,6 +79,7 @@ state = {
     "items": {"A": {"code": "", "name": ""}, "B": {"code": "", "name": ""}}, "line": LINE_ID, "lineName": LINE_NAME, "links": LINKS,
     "maint": [0, 0, 0, 0],   # maintenance per machine (setup = set-up / changeover), both stand the machine still
     "qc": {"A": {"good": 0, "rej": 0}, "B": {"good": 0, "rej": 0}},   # QC presses per product (good / rej = all)
+    "qlog": [],   # the latest QC presses in order ("good.A", "rej.B", "good" ...), so undo knows which to take back
     # the OEE panel of every dashboard: shift, ideal cycle, clock (demo = 1 s is 1 min), time frame; clear = counter
     "shift": {"start": "08:00", "work": 8, "bstart": "12:00", "blen": 60, "cycle": 120, "clock": "demo",
               "win": "shift", "from": "08:00", "to": "17:00"}, "clear": 0,
@@ -142,12 +155,37 @@ def on_command(m):
     by = str(m.get("by", ""))[:16]
     if m.get("cmd") == "press":
         k, _, p = str(m.get("key", "")).partition(".")
+        n = m.get("n", 1)
+        n = n if isinstance(n, int) and not isinstance(n, bool) and 1 <= n <= QC_MAX_N else 0
         if k in ("good", "rej") and p in ("A", "B"):
-            state["qc"][p][k] += 1
-            state[k] += 1
-            outbox.append({"machine": 0, "event": PRESS_EVENT[k], "product": p})
+            if not n:
+                return
+            state["qc"][p][k] += n
+            state[k] += n
+            state["qlog"] = (state["qlog"] + [f"{k}.{p}" + (f"*{n}" if n > 1 else "")])[-QLOG_MAX:]
+            outbox.extend({"machine": 0, "event": PRESS_EVENT[k], "product": p} for _ in range(n))   # one row per part
             dirty = True
-        elif k in ("good", "rej", "undo", "reset", "clear") and not p:
+        elif k == "undo" and not p:
+            # take back the latest GOOD / REJECT; nothing left to take back: nothing happens
+            if not state["qlog"]:
+                return
+            k2, p2, n2 = qlog_entry(state["qlog"].pop()) or ("good", "", 0)
+            state[k2] = max(0, state[k2] - n2)
+            if p2:
+                state["qc"][p2][k2] = max(0, state["qc"][p2][k2] - n2)
+            state["undo"] += 1
+            outbox.append({"machine": 0, "event": "undo", **({"product": p2} if p2 else {})})
+            dirty = True
+        elif k == "reset" and not p:
+            state["good"] = state["rej"] = 0
+            state["qc"] = {"A": {"good": 0, "rej": 0}, "B": {"good": 0, "rej": 0}}
+            state["qlog"] = []
+            state["reset"] += 1
+            outbox.append({"machine": 0, "event": "reset"})
+            dirty = True
+        elif k in ("good", "rej", "clear") and not p:
+            if k != "clear":
+                state["qlog"] = (state["qlog"] + [k])[-QLOG_MAX:]
             state[k] += 1
             outbox.append({"machine": 0, "event": PRESS_EVENT[k]})
             dirty = True
@@ -294,6 +332,8 @@ def on_message(client, _userdata, msg):
                     v = (m["qc"].get(p) or {}).get(k)
                     if isinstance(v, int) and v >= 0:
                         state["qc"][p][k] = v
+        if isinstance(m.get("qlog"), list):
+            state["qlog"] = [x for x in m["qlog"] if isinstance(x, str) and qlog_entry(x)][-QLOG_MAX:]
         if isinstance(m.get("items"), dict):
             for p in ("A", "B"):
                 for f in ("code", "name"):
