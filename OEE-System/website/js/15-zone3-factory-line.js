@@ -948,23 +948,19 @@ function drawChart() {
 }
 csvg.addEventListener('pointermove', (e) => { const r = csvg.getBoundingClientRect(); hoverX = e.clientX - r.left; drawChart(); });
 csvg.addEventListener('pointerleave', () => { hoverX = null; drawChart(); });
-// the tabs stay exactly where they are when the dashboard opens over the page: a spot of the same size holds
-// their place in the header, and they are pinned over it
-const tabSpot = document.createElement('span');
-tabSpot.className = 'lf-tabs-spot'; tabSpot.hidden = true;
-tabs.before(tabSpot);
-function pinTabs() {
-  if (od.hidden) { tabs.style.cssText = ''; tabSpot.hidden = true; return; }
-  if (tabSpot.hidden) { const r = tabs.getBoundingClientRect(); tabSpot.style.width = r.width + 'px'; tabSpot.style.height = r.height + 'px'; tabSpot.hidden = false; }
-  const p = tabSpot.getBoundingClientRect();
-  Object.assign(tabs.style, { position: 'fixed', left: p.left + 'px', top: p.top + 'px', transform: 'none', margin: '0' });
+// the dashboard opens below the header bar, so the header and its tabs never move: the pointer that clicked
+// one tab is right over the other one
+function placeDash() {
+  if (od.hidden) return;
+  const bar = document.querySelector('.dash-bar');
+  od.style.top = (bar && getComputedStyle(bar).display !== 'none' ? Math.max(0, bar.getBoundingClientRect().bottom) : 0) + 'px';
 }
-addEventListener('resize', pinTabs);
+addEventListener('resize', placeDash);
+addEventListener('scroll', placeDash, { passive: true });
 function showTab(name) {
   tabs.querySelectorAll('[data-tab]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === name)));
-  if (name === 'oee' && od.hidden) { od.hidden = false; pinTabs(); }   // measure before the tabs leave the header
   od.hidden = name !== 'oee';
-  pinTabs();
+  placeDash();
   document.body.classList.toggle('od-open', !od.hidden);
   if (!od.hidden) renderDash();
   try { localStorage.setItem('lf-tab', name); } catch {}

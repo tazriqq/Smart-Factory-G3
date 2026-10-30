@@ -498,3 +498,6 @@ body.phone .lb-now{display:flex;width:100%;margin-top:4px}
 .lf-padtag{z-index:40}   /* above the machine tags too */
 .lf-tabs-spot{display:inline-block;flex:none}
 .lf-tabs-spot[hidden]{display:none}
+/* the dashboard sits under the header bar (15-zone3-factory-line.js placeDash): the tabs stay in the header */
+body.od-open .lf-tabs,body.od-open .dash-bar .lf-tabs{position:relative;top:auto;left:auto;transform:none}
+body .od{padding-top:20px}
