@@ -100,7 +100,7 @@ services:
     volumes:
       - timescaledb-data:/var/lib/postgresql/data
       - ./postgres/init.sh:/docker-entrypoint-initdb.d/init.sh:ro
-      - ./postgres/schema.sql:/factory/schema.sql:ro
+      - ./postgres:/factory:ro                       # the folder, not the file: an edit (any editor) is seen at once
     environment:
       POSTGRES_USER: ${PG_ADMIN_USER}
       POSTGRES_PASSWORD: ${PG_ADMIN_PASSWORD}
@@ -157,6 +157,18 @@ services:
       LINKS: ${LINKS:-}           # extra links on the pages: name|url;name|url (e.g. the Google Sheet)
       MQTT_WEB_PASS: ${MQTT_WEB_PASS}   # handed out once per pairing code (GET /pair/<code>)
 
+  # the database's OEE for the dashboard's OEE Dashboard tab (board and simulated line), read only: GET /api/db
+  # (nginx passes /api/ on; not published on a port of its own)
+  oee-api:
+    build: ./oee-api
+    restart: unless-stopped
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    environment:
+      DATABASE_URI: postgresql://reader:${PG_READER_PASS}@timescaledb:5432/${PG_DB}
+      LINE_ID: ${LINE_ID}
+
   # every SHEETS_EVERY_MIN minutes: OEE summary from the database -> Google Sheet (+ the daily report to LINE)
   sheets-sync:
     build: ./sheets-sync
@@ -173,6 +185,7 @@ services:
       SHEETS_EVENTS_ROWS: ${SHEETS_EVENTS_ROWS:-500}
       SHEETS_EVENTS_GAP_S: ${SHEETS_EVENTS_GAP_S:-10}
       SHEETS_MAX_ROWS: ${SHEETS_MAX_ROWS:-1000}
+      SHEETS_DAYS: ${SHEETS_DAYS:-120}                      # the daily tabs and the report read this many days back
       LINE_ID: ${LINE_ID}
       LINE_NAME: ${LINE_NAME:-}
       REPORT_AT: ${REPORT_AT:-23:55}                       # the daily report to LINE (Thailand time)

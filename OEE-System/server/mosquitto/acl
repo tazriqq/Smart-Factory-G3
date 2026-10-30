@@ -20,3 +20,6 @@ topic write group3/dpx/+/control
 topic write group3/dpx/+/control/pair/+
 # ...and log the control pages' presses as events, marked "source":"website"
 topic write group3/dpx/+/events
+# ...and, while the control page drives the line (no board), the simulated line's rows: events (part / output)
+# and minutes, marked "source":"sim"
+topic write group3/dpx/+/minutes

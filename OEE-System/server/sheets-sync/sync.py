@@ -36,6 +36,9 @@ HOURLY_DAYS = int(os.environ.get("SHEETS_HOURLY_DAYS", "14"))
 EVENTS_ROWS = int(os.environ.get("SHEETS_EVENTS_ROWS", "500"))
 EVENTS_GAP = max(5, int(os.environ.get("SHEETS_EVENTS_GAP_S", "10")))
 MAX_ROWS = max(10, int(os.environ.get("SHEETS_MAX_ROWS", "1000")))
+# the daily tabs and reports read this many days back, not all history (the database keeps it all)
+DAYS = max(2, int(os.environ.get("SHEETS_DAYS", "120")))
+SINCE = f"date_trunc('day', now() AT TIME ZONE 'Asia/Bangkok') AT TIME ZONE 'Asia/Bangkok' - make_interval(days => {DAYS})"
 REPORT_AT = os.environ.get("REPORT_AT", "23:55")
 LINE_TOKEN = os.environ.get("LINE_CHANNEL_TOKEN", "").strip()
 LINE_TO = [x.strip() for x in os.environ.get("LINE_TO", "").split(",") if x.strip()]
@@ -50,15 +53,16 @@ STAMP = "YYYY-MM-DD HH24:MI:SS:MS"   # every time in the sheet and in this log: 
 TABS = {
     "OEE_Daily": f"""
         SELECT to_char(day::timestamp, '{STAMP}') AS date, line, machine, product, name, logged_min, run_min, stop_min, alarm_min,
-               parts, ideal_cycle_s, good, reject, {RATIOS}
-        FROM oee_daily ORDER BY day, line, machine""",
+               parts, ideal_cycle_s, good, reject, {RATIOS}, source
+        FROM (SELECT (period_start AT TIME ZONE 'Asia/Bangkok')::date AS day, * FROM oee('1 day', {SINCE})) d
+        ORDER BY day, line, source, machine""",
     "OEE_Hourly": f"""
         SELECT to_char(period_start, '{STAMP}') AS hour, line, machine, product, name, logged_min, run_min,
-               stop_min, alarm_min, parts, ideal_cycle_s, good, reject, {RATIOS}
-        FROM oee('1 hour', date_trunc('day', now()) - make_interval(days => %s)) ORDER BY 1, 2, 3""",
+               stop_min, alarm_min, parts, ideal_cycle_s, good, reject, {RATIOS}, source
+        FROM oee('1 hour', date_trunc('day', now()) - make_interval(days => %s)) ORDER BY 1, 2, source, 3""",
     "Products": f"""
-        SELECT to_char(day::timestamp, '{STAMP}') AS date, line, product, code, name, output, good, reject, quality
-        FROM product_daily ORDER BY day, line, product""",
+        SELECT to_char(day::timestamp, '{STAMP}') AS date, line, product, code, name, output, good, reject, quality, source
+        FROM products({SINCE}) ORDER BY day, line, source, product""",
     "Machines": "SELECT line, machine, name, ideal_cycle_s FROM machines ORDER BY line, machine",
     "Events": f"""
         SELECT to_char(e.time, '{STAMP}') AS time, e.line, e.machine,
@@ -93,9 +97,9 @@ REPORT_HEADER = ["date", "line", "status", "oee", "availability", "performance",
 def daily_reports(conn):
     """{(day, line): report}, every day there is data for, from the board's rows only"""
     cur = conn.cursor()
-    cur.execute("""SELECT day, line, machine, name, sum(logged_min), sum(run_min), sum(stop_min), sum(alarm_min),
-                          sum(ideal_cycle_s * parts) / 60, product, sum(parts)
-                   FROM oee_daily GROUP BY day, line, machine, name, product""")
+    cur.execute(f"""SELECT (period_start AT TIME ZONE 'Asia/Bangkok')::date, line, machine, name, sum(logged_min), sum(run_min),
+                          sum(stop_min), sum(alarm_min), sum(ideal_cycle_s * parts) / 60, product, sum(parts)
+                   FROM oee('1 day', {SINCE}) WHERE source = 'board' GROUP BY 1, line, machine, name, product""")
     machines = {}
     for day, line, mach, name, logged, run, stop, alarm, ideal_min, prod, parts in cur.fetchall():
         m = machines.setdefault((day, line), {}).setdefault(mach, {"name": name, "logged": 0, "run": 0, "stop": 0, "alarm": 0, "ideal": 0, "prod": {}})
@@ -103,12 +107,12 @@ def daily_reports(conn):
         m["alarm"] += float(alarm or 0); m["ideal"] += float(ideal_min or 0)
         if prod:
             m["prod"][prod] = m["prod"].get(prod, 0) + int(parts or 0)
-    cur.execute("SELECT day, line, product, code, name, output, good, reject FROM product_daily")
+    cur.execute(f"SELECT day, line, product, code, name, output, good, reject FROM products({SINCE}) WHERE source = 'board'")
     products = {}
     for day, line, prod, code, name, out, good, rej in cur.fetchall():
         products.setdefault((day, line), {})[prod] = {"code": code or "", "name": name or "", "output": out, "good": good, "reject": rej}
-    cur.execute("""SELECT (time AT TIME ZONE 'Asia/Bangkok')::date, line, count(*) FROM events
-                   WHERE event = 'alarm_on' AND source IS DISTINCT FROM 'website' GROUP BY 1, 2""")
+    cur.execute(f"""SELECT (time AT TIME ZONE 'Asia/Bangkok')::date, line, count(*) FROM events
+                   WHERE event = 'alarm_on' AND source IS NULL AND time >= {SINCE} GROUP BY 1, 2""")   # the board's own
     alarms = {(d, l): n for d, l, n in cur.fetchall()}
     reports = {}
     for key in sorted(set(machines) | set(products)):
