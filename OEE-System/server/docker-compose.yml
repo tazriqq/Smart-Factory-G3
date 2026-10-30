@@ -2,7 +2,7 @@
 # plus the website, and sheets-sync (OEE summary -> Google Sheet)
 # Start:  docker compose up -d        (settings and passwords come from .env next to this file)
 # Open:   website  http://<this computer>:8080     Grafana  http://<this computer>:3000
-#         MQTT for the ESP32  <this computer>:1883   ·   WebSocket for the website  ws://<this computer>:9001
+#         MQTT for the ESP32  <this computer>:1883   ·   the pages' MQTT goes through the website: ws://<this computer>:8080/mqtt
 #         PostgreSQL  <this computer>:5432  (Claude's MCP logs in as the read-only user "reader")
 #         the database in a web page (pgweb, read only)  http://127.0.0.1:8081  (this computer only)
 #         from anywhere: docker compose --profile tunnel up -d   (Cloudflare Tunnel, CLOUDFLARE_TUNNEL_TOKEN in .env)
@@ -53,7 +53,8 @@ services:
 
   # Cloudflare Tunnel: opens the website (and Grafana) from anywhere without opening router ports.
   # Starts only with --profile tunnel. The public hostnames are set in the Cloudflare dashboard:
-  #   oee.<your domain>      -> http://web:80        (the page + its MQTT at /mqtt)
+  #   oee.<your domain>      -> http://web:80        (the page + its MQTT at /mqtt-view)
+  #   control.<your domain>  -> http://web:80        (nginx picks the page by the name; MQTT at /mqtt)
   #   grafana.<your domain>  -> http://grafana:3000
   cloudflared:
     image: cloudflare/cloudflared:2024.12.2
@@ -112,7 +113,6 @@ services:
       timeout: 5s
       retries: 12
 
-  # every SHEETS_EVERY_MIN minutes: OEE summary from the database -> Google Sheet
   # a copy of the database every day in ./backups (kept BACKUP_KEEP_DAYS days); restore: see OEE-System/README.md
   backup:
     image: timescale/timescaledb:2.17.2-pg16
@@ -135,10 +135,11 @@ services:
       - |
         while true; do
           f=/backups/factory-$$(date +%Y-%m-%d).dump
-          if pg_dump -Fc -f "$$f.part" 2>/tmp/err; then mv "$$f.part" "$$f"; echo "backup: $$f ($$(du -h "$$f" | cut -f1))"
-          else echo "backup: failed: $$(grep -v 'circular\|hypertable\|chunk\|continuous_agg\|hint' /tmp/err | head -3)"; rm -f "$$f.part"; fi
+          # a failed copy (e.g. the database still starting after a reboot) is tried again in 5 minutes, not tomorrow
+          if pg_dump -Fc -f "$$f.part" 2>/tmp/err; then mv "$$f.part" "$$f"; echo "backup: $$f ($$(du -h "$$f" | cut -f1))"; wait=86400
+          else echo "backup: failed, trying again in 5 minutes: $$(grep -v 'circular\|hypertable\|chunk\|continuous_agg\|hint' /tmp/err | head -3)"; rm -f "$$f.part"; wait=300; fi
           find /backups -name 'factory-*.dump' -mtime +$$KEEP_DAYS -delete
-          sleep 86400
+          sleep $$wait
         done
 
   # the one copy of the control page's state: takes the pages' commands in order, first one wins
@@ -155,6 +156,7 @@ services:
       LINKS: ${LINKS:-}           # extra links on the pages: name|url;name|url (e.g. the Google Sheet)
       MQTT_WEB_PASS: ${MQTT_WEB_PASS}   # handed out once per pairing code (GET /pair/<code>)
 
+  # every SHEETS_EVERY_MIN minutes: OEE summary from the database -> Google Sheet (+ the daily report to LINE)
   sheets-sync:
     build: ./sheets-sync
     restart: unless-stopped
