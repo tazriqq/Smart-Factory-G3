@@ -5,6 +5,7 @@
 > - **OEE dashboard:** https://oee.rdeewv.click
 > - **Control:** https://control.rdeewv.click
 > - **Grafana:** https://grafana.rdeewv.click
+> - **Google Sheet:** https://docs.google.com/spreadsheets/d/1ZiESObAtN6erJ4NQateA69M3uQN6uk8AtL6M_rZyW1g/edit?usp=sharing
 >
 > เข้าครั้งแรกจะมีหน้า login ของ Cloudflare ให้ใส่ email (ใช้ email ที่ได้จาก LEB2) แล้วกรอกรหัสที่ส่งไปทาง email
 
