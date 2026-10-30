@@ -4,10 +4,11 @@
                     เครื่อง server (คอม / Raspberry Pi ที่เปิดทิ้งไว้) ── docker compose
                     ┌───────────────────────────────────────────────────────────────────────────────┐
 ESP32 ──MQTT:1883──►│ Mosquitto ──┬── nginx :8080 ──► หน้าเว็บ  OEE (/mqtt-view) · control (/mqtt)       │
-                    │             ├──► control-hub ──► Mosquitto (ค่าควบคุมจริงของหน้า control ที่เดียว)      │
+                    │             ├──► control-hub ──► Mosquitto (ค่าควบคุมจริง + ไลน์จำลองบน server)        │
                     │             └──► Telegraf ──┬──► PostgreSQL/TimescaleDB :5432 ◄── Claude (MCP)       │ ← ที่เก็บหลัก
                     │                             │        ├──► backup (ไฟล์ .dump ทุกวัน)                │
-                    │                             │        └──► pgweb :8081 (ดูในเว็บ, อ่านอย่างเดียว)       │
+                    │                             │        ├──► pgweb :8081 (ดูในเว็บ, อ่านอย่างเดียว)       │
+                    │                             │        └──► oee-api ──► nginx /api/db (แท็บ OEE Dashboard) │
                     │                             └──► InfluxDB ──► Grafana :3000                       │
                     │  sheets-sync: อ่านสรุปจาก PostgreSQL ──HTTPS──┐  (+ รายงานประจำวันไป LINE)          │
                     └───────────────────────────────────────────────│───────────────────────────────┘
@@ -43,7 +44,8 @@ OEE-System/
     ├── .env.example                           ← แม่แบบของ .env
     ├── mosquitto/                             ← ตั้งค่า broker + สิทธิ์ผู้ใช้ (acl, acl_view)
     ├── nginx/default.conf                     ← หน้าเว็บ + ส่งต่อ /mqtt, /mqtt-view, /pair · เลือกหน้า OEE / control ตามชื่อ domain
-    ├── control-hub/hub.py                     ← ค่าควบคุมจริงของหน้า control + รหัสจับคู่ 5 ตัว
+    ├── control-hub/hub.py                     ← ค่าควบคุมจริงของหน้า control + รหัสจับคู่ 5 ตัว + ไลน์จำลองบน server
+    ├── oee-api/api.py                         ← OEE จาก database ให้แท็บ OEE Dashboard (GET /api/db, อ่านอย่างเดียว)
     ├── postgres/schema.sql                    ← ตาราง, view OEE, ผู้ใช้ (สร้างตอนเปิดครั้งแรก)
     ├── postgres/init.sh                       ← รัน schema.sql พร้อมรหัสจาก .env
     ├── sheets-sync/sync.py                    ← ส่งสรุปจาก database ขึ้น Google Sheet + รายงานประจำวันไป LINE
@@ -59,13 +61,14 @@ OEE-System/
 |---|---|---|---|
 | ทั้งหน้า | ธีมสี, layout | `01-theme.css`, `02-layout-dashboard.css` | `01-machine-sandbox.js`, `02-theme.js` |
 | **ZONE 1** | แถบบน: ชื่อ + เชื่อมบอร์ด (Bluetooth / USB / Wi-Fi / **MQTT**) | (อยู่ใน `02-layout-dashboard.css`) | `05-zone1-board-connection.js` |
-| **ZONE 2** | แผงซ้าย (ซ่อนไว้ ปุ่มย้ายไปหน้า `control.html` แล้ว แต่ยังรับค่าจากหน้า control): ปุ่มหมุนความเร็ว M1-M4 + บอร์ดไลน์ (alarm, Good / Reject) | `10-zone2-knobs.css`, `11-zone2-control-panel.css` | `04-zone2-control-panel.js` (+ ปุ่มหมุนใน `05-…`) |
+| **ZONE 2** | (ไม่มีแผงแล้ว ปุ่มทั้งหมดอยู่หน้า `control.html`) เหลือแค่ตัวรับความเร็ว M1-M4 จากหน้า control / บอร์ด (`window.pots`) และปุ่ม QC ของหน้า control รุ่นเก่า | — | `04-zone2-control-panel.js` |
 | **ZONE 3** | ไลน์ผลิต: เครื่อง 4 เครื่องบนพื้นโรงงาน, สายพาน, สถิติไลน์ | `08-zone3-factory-line.css`, `09-zone3-cnc-stage.css` | `03-zone3-line-stage.js`, `15-zone3-factory-line.js` |
 | เครื่องจักร | ภาพวาด + animation ของแต่ละเครื่อง | `04-machine-lnc8.css` … `07-machines-on-line.css` | `07`-`14-machine-*.js` |
 | **ZONE 4** | แผง OEE: A × P × Q, กะ, timeline | `03-zone4-oee.css` | `06-zone4-oee.js` |
 
 - **ลำดับไฟล์สำคัญ** เลขหน้าชื่อไฟล์คือลำดับที่ `index.html` โหลด ถ้าสลับ หน้าตาหรือการทำงานอาจเพี้ยน
-- `index.html` ใหญ่ (~3 MB) เพราะภาพวาดเครื่องจักรเป็น SVG ที่ JavaScript ต้องขยับได้
+- `index.html` ใหญ่ (~2.9 MB) เพราะภาพวาดเครื่องจักรเป็น SVG ที่ JavaScript ต้องขยับได้
+- **ประหยัดทรัพยากร:** ภาพเคลื่อนไหวของไลน์และเครื่องจักรวาดไม่เกิน 30 ภาพ/วินาที พร้อมกันทุกตัว (`01-machine-sandbox.js` → `window.__mx.raf`) · เครื่องที่ไม่อยู่บนจอไม่วาด
 
 ---
 
@@ -175,19 +178,21 @@ OEE-System/
 ### PostgreSQL / TimescaleDB (ที่เก็บหลัก, database `factory`)
 | ชื่อ | ชนิด | 1 แถว = | เก็บ |
 |---|---|---|---|
-| `events` | ตาราง | 1 สัญญาณ: `machine` (0 = ทั้งไลน์), `event` = part, output, run_on/off, door_open/close, alarm_on/off, good, reject, boot, route · จากหน้า control เพิ่ม setup_on/off, maintenance_on/off, product_info, oee_clear, use_board / use_simulator · `product` = A / B · `route` (เฉพาะ event route) · `source` = board / website | ตลอดไป |
-| `minutes` | ตาราง | 1 เครื่อง / 1 นาที: `product`, `run_s`, `stop_s`, `alarm_s`, `parts`, `speed_pct` | ตลอดไป |
+| `events` | ตาราง | 1 สัญญาณ: `machine` (0 = ทั้งไลน์), `event` = part, output, run_on/off, door_open/close, alarm_on/off, good, reject, boot, route · จากหน้า control เพิ่ม setup_on/off, maintenance_on/off, product_info, oee_clear, use_board / use_simulator · `product` = A / B · `route` (เฉพาะ event route) · `source` = board / website | ตลอดไป (บีบอัดหลัง 7 วัน) |
+| `minutes` | ตาราง | 1 เครื่อง / 1 นาที: `product`, `run_s`, `stop_s`, `alarm_s`, `parts`, `speed_pct` · `source` = ว่าง (บอร์ด) หรือ `sim` (ไลน์จำลองบน server, เฉพาะในเวลากะ) · `output` = ชิ้นที่ออกจากปลายเส้นทาง (ไลน์จำลองเท่านั้น บอร์ดส่งเป็น event `output`) | ตลอดไป (บีบอัดหลัง 7 วัน) |
 | `board` | ตาราง | ข้อความสดจากบอร์ด (~1 ครั้ง/วินาที) `pot_0..3 run_0..3 door_0..3 al cnt_0..3 good rej ms` | 365 วัน (บีบอัดหลัง 7 วัน) |
 | `board_status` | ตาราง | online / offline ของบอร์ด | ตลอดไป |
 | `machines` | ตาราง (ตั้งค่า) | ชื่อเครื่อง + `ideal_cycle_s` | — |
 | `oee_daily` | view | OEE 1 เครื่อง (+ product ที่ทำ) / 1 วัน (วันที่ไทย) | คำนวณสดทุกครั้ง |
-| `product_daily` | view | 1 product / 1 วัน: `output`, `good`, `reject`, `quality` | คำนวณสดทุกครั้ง |
+| `product_daily` | view | 1 product / 1 วัน: `output`, `good`, `reject`, `quality`, `source` · อ่านเฉพาะบางวัน: `products(since)` | คำนวณสดทุกครั้ง |
 | `route_history` | view | ทุกครั้งที่เปลี่ยนเส้นทาง: เวลา + เครื่องของ A / B | — |
 | `product_info` | view | รหัส + ชื่อสินค้าล่าสุดของ A / B (ตั้งในหน้า control) | — |
 | `oee_hourly` | view | OEE 1 เครื่อง / 1 ชั่วโมง ย้อนหลัง 30 วัน | คำนวณสดทุกครั้ง |
 | `oee(bucket, since, until, bucket_offset)` | function | OEE ช่วงเวลาใดก็ได้ เช่น กะ 08-20 / 20-08: `oee('12 hours', bucket_offset => '8 hours')` | — |
 | `line_status` | view | บอร์ด online ไหม + ข้อมูลล่าสุดเข้ามาเมื่อไร | — |
 
+- **source** (ทุก view / function OEE): `board` = บอร์ดจริง = ข้อมูลจริง (Quality จากปุ่ม QC บนบอร์ด) · `test` = ไลน์จำลองบน server ตามนาฬิกาจำลองของหน้า control (ที่เวลาจำลอง, Quality จากปุ่ม QC บนหน้า control) · `sim` = ไลน์จำลองตามเวลาจริง (ข้อมูลเก่า; ตอนนี้ไม่บันทึกแล้ว ยกเว้นตั้ง `SIM_RECORD_REAL=1` ให้ control-hub) · กรองด้วย `source` เสมอ อย่าบวกรวมกัน
+- **ช่วงที่ไม่ได้บันทึก (บอร์ด):** `SELECT * FROM not_recorded(now() - interval '1 day')` = ช่องว่างระหว่างแถว minutes ของบอร์ดเกิน 90 วินาที พร้อมสาเหตุ (บอร์ดออฟไลน์ / บอร์ดรีสตาร์ต / ข้อมูลไม่ถึง server) · บอร์ดเก็บแถวไว้ส่งทีหลังได้ ~2 ชม. ถ้า MQTT หลุดสั้นๆ จึงไม่เกิดช่องว่าง
 - **Availability** = เวลาเดินเครื่อง ÷ เวลาที่บอร์ดเปิดบันทึก
 - **Performance** = ideal_cycle_s × จำนวนชิ้น ÷ เวลาเดินเครื่อง
 - **Quality** = good ÷ (good + reject) ของ **product ที่เครื่องนั้นทำ** — เครื่องในเส้นทางเดียวกันจึงได้ค่าเท่ากัน (ข้อมูลก่อนมี product นับรวมทั้งไลน์เหมือนเดิม)
@@ -196,7 +201,7 @@ OEE-System/
   docker compose exec timescaledb psql -U factory_admin -d factory -c "UPDATE machines SET ideal_cycle_s = 55 WHERE line = 'line1' AND machine = 1"
   ```
 - เปิดดูเอง: `docker compose exec timescaledb psql -U factory_admin -d factory` แล้ว `SELECT * FROM oee_daily ORDER BY day DESC LIMIT 20;`
-- แก้ `schema.sql` แล้ว: `docker compose exec timescaledb sh /docker-entrypoint-initdb.d/init.sh` (รันซ้ำได้ ไม่ลบข้อมูล)
+- แก้ `schema.sql` แล้ว: `docker compose exec timescaledb sh /docker-entrypoint-initdb.d/init.sh` (รันซ้ำได้ ไม่ลบข้อมูล · โฟลเดอร์ `postgres/` ถูก mount ทั้งโฟลเดอร์ จึงเห็นไฟล์ล่าสุดเสมอไม่ว่าแก้ด้วยโปรแกรมไหน)
 
 ### Google Sheet (สรุป, server เขียนทับทุก 15 นาที)
 ทุกแท็บมีไม่เกิน `SHEETS_MAX_ROWS` แถว (ค่าเริ่มต้น 1000 ใน `server/.env`) — เก็บแถวใหม่สุด ของเก่าหลุดออก (first in, first out) ชีตจึงเล็กตลอด (ไม่ถึง 1 MB) ข้อมูลทั้งหมดยังอยู่ใน database

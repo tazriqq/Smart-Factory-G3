@@ -19,7 +19,7 @@
   const MIN = 60000;
 
   // ───────── settings (remembered in this browser) ─────────
-  const inp = { start: q("#oee-start"), work: q("#oee-work"), end: q("#oee-end"), bstart: q("#oee-bstart"), blen: q("#oee-blen"), cycle: q("#oee-cycle"), clock: q("#oee-clockmode"), from: q("#oee-from"), to: q("#oee-to") };
+  const inp = { start: q("#oee-start"), shifts: q("#oee-shifts"), work: q("#oee-work"), end: q("#oee-end"), bstart: q("#oee-bstart"), blen: q("#oee-blen"), cycle: q("#oee-cycle"), clock: q("#oee-clockmode"), from: q("#oee-from"), to: q("#oee-to") };
   const segBtns = qa(".oee-seg button");
   const store = {
     get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
@@ -34,11 +34,12 @@
     for (const k of Object.keys(inp)) if (saved[k] !== undefined && inp[k]) inp[k].value = saved[k];
     if (saved.win) win = saved.win;
   }
-  // a worker's day: shift end = start + work hours + break
+  // a worker's day: a shift = work hours + break; 1-3 shifts one after the other (the last one's end shown), past midnight too
+  const hm = (m) => String(Math.floor(((m % 1440) + 1440) % 1440 / 60)).padStart(2, "0") + ":" + String(((m % 60) + 60) % 60).padStart(2, "0");
   const fitEnd = () => {
-    const work = Math.min(16, Math.max(1, Number(inp.work.value) || 8));
-    const end = Math.min(24 * 60 - 1, toMin(inp.start.value) + Math.round(work * 60) + Math.max(0, Number(inp.blen.value) || 0));
-    if (Number.isFinite(end)) inp.end.value = String(Math.floor(end / 60)).padStart(2, "0") + ":" + String(end % 60).padStart(2, "0");
+    const work = Math.min(16, Math.max(1, Number(inp.work.value) || 8)), n = Math.min(3, Math.max(1, Number(inp.shifts.value) || 1));
+    const end = toMin(inp.start.value) + n * (Math.round(work * 60) + Math.max(0, Number(inp.blen.value) || 0));
+    if (Number.isFinite(end)) inp.end.value = hm(end);
   };
   const save = () => { const v = { win }; for (const k of Object.keys(inp)) v[k] = inp[k].value; store.set(SETTINGS, v); };
 
@@ -56,36 +57,49 @@
   const overlap = (a0, a1, b0, b1) => Math.max(0, Math.min(a1, b1) - Math.max(a0, b0));
   const midnight = (t) => { const d = new Date(t); d.setHours(0, 0, 0, 0); return d.getTime(); };
 
-  // ───────── clock: the computer's clock, or a fast demo clock ─────────
-  const DEMO_RATE = 60; // 1 s = 1 min
-  const demo = { realAt: 0, vAt: 0, pending: true };
+  // ───────── clock: the computer's clock, or the line's simulated clock (set on the control page, kept by the
+  // server's control-hub: window.__lineClock) for test cases; "demo" = that simulated clock, its record not kept ─────────
+  const demo = { pending: false };
   const isDemo = () => inp.clock.value === "demo";
-  function startDemo() {
-    const s = settings();
-    demo.realAt = Date.now();
-    demo.vAt = midnight(Date.now()) + (Number.isFinite(s.start) ? s.start : 480) * MIN;
-    demo.pending = true; // the demo clock starts with the first sample, so the shift starts recorded
-  }
-  const now = () => (isDemo() ? (demo.pending ? demo.vAt : demo.vAt + (Date.now() - demo.realAt) * DEMO_RATE) : Date.now());
+  const lineClock = () => (window.__lineClock && window.__lineClock.mode === "sim" ? window.__lineClock : null);
+  const rate = () => Math.max(1, (lineClock() || {}).speed || 1);
+  function startDemo() { demo.pending = false; }
+  const now = () => (isDemo() && lineClock() ? lineClock().now() : Date.now());
 
   function settings() {
-    const s = { start: toMin(inp.start.value), end: toMin(inp.end.value), bstart: toMin(inp.bstart.value), blen: Math.max(0, Number(inp.blen.value) || 0), cycle: Math.max(0, Number(inp.cycle.value) || 0) };
+    const work = Math.min(16, Math.max(1, Number(inp.work.value) || 8)), blen = Math.max(0, Number(inp.blen.value) || 0);
+    const s = { start: toMin(inp.start.value), bstart: toMin(inp.bstart.value), blen, cycle: Math.max(0, Number(inp.cycle.value) || 0),
+      shifts: Math.min(3, Math.max(1, Number(inp.shifts.value) || 1)), span: Math.round(work * 60) + blen };
+    s.end = s.start + s.span;
     return s;
   }
-  // the shift (and its plan operating intervals) on the day of time t
+  // every shift around time t: [{k, start, end, bs, be}] (k = 0 for the first of the day), from the day before to the day after
+  function shiftsAround(t) {
+    const s = settings(), out = [];
+    const into = ((s.bstart - s.start) % 1440 + 1440) % 1440;       // where the break sits in a shift
+    for (const d of [-1, 0, 1]) for (let k = 0; k < s.shifts; k++) {
+      const start = midnight(t) + d * 1440 * MIN + (s.start + k * s.span) * MIN, end = start + s.span * MIN;
+      const bs = Math.min(end, start + into * MIN), be = Math.min(end, bs + s.blen * MIN);
+      out.push({ k, start, end, bs, be });
+    }
+    return out.sort((a, b) => a.start - b.start);
+  }
+  // the shift of time t (and its plan operating intervals): the one it is in; between shifts, the one that ended
+  // earlier that day, else the next one
   function shiftOf(t) {
-    const s = settings();
-    const d0 = midnight(t);
-    const start = d0 + s.start * MIN, end = d0 + s.end * MIN;
-    const bs = Math.max(start, Math.min(end, d0 + s.bstart * MIN));
-    const be = Math.max(bs, Math.min(end, bs + s.blen * MIN));
+    const s = settings(), all = shiftsAround(t);
+    const pick = all.find((x) => x.start <= t && t < x.end) || [...all].reverse().find((x) => x.end <= t && midnight(x.end - 1) === midnight(t)) || all.find((x) => x.start > t);
+    const { k, start, end, bs, be } = pick;
     const plan = [[start, bs], [be, end]].filter(([a, b]) => b > a);
     let bad = "";
-    if (!(end > start)) bad = "Shift end must be later than shift start.";
+    if (!Number.isFinite(s.start)) bad = "Set a shift start time.";
     else if (!Number.isFinite(s.bstart)) bad = "Set a break start time.";
-    else if (s.blen > 0 && (d0 + s.bstart * MIN < start || d0 + (s.bstart + s.blen) * MIN > end)) bad = "The break must sit inside the shift.";
-    return { start, end, bs, be, plan, bad, cycle: s.cycle };
+    else if (s.shifts * s.span > 1440) bad = `${s.shifts} shifts of ${hm(s.span)} h do not fit in a day.`;
+    else if (s.blen > 0 && ((s.bstart - s.start) % 1440 + 1440) % 1440 + s.blen > s.span) bad = "The break must sit inside the shift.";
+    return { k, n: s.shifts, start, end, bs, be, plan, bad, cycle: s.cycle };
   }
+  // every shift of the day as "08:00–20:00", for the summaries
+  const shiftsText = () => { const s = settings(); return Array.from({ length: s.shifts }, (_, k) => `${hm(s.start + k * s.span)}–${hm(s.start + (k + 1) * s.span)}`); };
   function windowOf(t, sh) {
     if (win === "shift") return { w0: sh.start, w1: sh.end, bad: "" };
     if (win === "custom") {
@@ -125,10 +139,13 @@
     if (cause !== null) running = !cause;
     if (isDemo() && demo.pending) { demo.pending = false; demo.realAt = real; }
     const t = now();
-    const run = running ? 1 : 0;
-    const tol = isDemo() ? 5000 * DEMO_RATE : 65000; // longer gaps are "not recorded"
+    let run = running ? 1 : 0;
+    const tol = isDemo() ? Math.max(65000, 5000 * rate()) : 65000; // longer gaps are "not recorded"
     const last = log.segs[log.segs.length - 1];
-    const why = run ? "" : cause || "";
+    // the real line without its board (or this page without the server): not recorded, and why (run -1)
+    const wait = window.__lineWait || "";
+    if (wait) { run = -1; }
+    const why = wait || (run ? "" : cause || "");
     if (last && t >= last[1] && t - last[1] <= tol) {
       if (last[2] === run && (last[3] || "") === why) last[1] = t;
       else log.segs.push([last[1], t, run, why]);
@@ -188,7 +205,7 @@
       if (b < w0 || a > e1) continue;
       for (const [p0, p1] of sh.plan) {
         const ov = Math.max(0, Math.min(b, e1, w1, p1) - Math.max(a, w0, p0));
-        if (r) run += ov; else stop += ov;
+        if (r > 0) run += ov; else if (r === 0) stop += ov;   // r -1: not recorded
       }
     }
     let good = 0, bad = 0;
@@ -220,8 +237,11 @@
     for (const b of segBtns) b.setAttribute("aria-checked", String(b.dataset.win === win));
     o("window").textContent = Number.isFinite(w0) && Number.isFinite(w1) ? `${hhmm(w0)} – ${hhmm(Math.min(w1, Math.max(w0, t)))}${w1 > t ? ` (to ${hhmm(w1)})` : ""}` : "";
     const st = settings();
-    o("shiftsum").textContent = `${inp.start.value}–${inp.end.value} · work ${inp.work.value} h · break ${inp.bstart.value}, ${st.blen} min · cycle ${st.cycle} s · ${isDemo() ? "demo clock" : "real time"}`;
-    shiftLine.textContent = `Shift ${inp.start.value}–${inp.end.value} · break ${inp.bstart.value} (${st.blen} min) · time frame: ${WIN_NAME[win] || win} ${o("window").textContent}${isDemo() ? " · demo clock" : ""}`;
+    // the shift now (of n), its break, and every shift of the day when there are more
+    const name = sh.n > 1 ? `Shift ${sh.k + 1}/${sh.n} ${hhmm(sh.start)}–${hhmm(sh.end)}` : `Shift ${hhmm(sh.start)}–${hhmm(sh.end)}`;
+    const all = sh.n > 1 ? ` (${shiftsText().join(" · ")})` : "";
+    o("shiftsum").textContent = `${shiftsText().join(" · ")} · work ${inp.work.value} h + break ${st.blen} min each · cycle ${st.cycle} s · ${isDemo() ? "simulated clock" : "real time"}`;
+    shiftLine.textContent = `${name}${all} · break ${hhmm(sh.bs)} (${st.blen} min) · time frame: ${WIN_NAME[win] || win} ${o("window").textContent}${isDemo() ? " · simulated clock" : ""}`;
     o("clock").textContent = hhmmss(t);
     o("clock").dateTime = new Date(t).toISOString();
     const chip = o("state");
@@ -260,7 +280,7 @@
     for (const [a, b, rr] of log.segs) {
       const a1 = Math.max(a, r0), b1 = Math.min(b, r1);
       if (b1 <= a1) continue;
-      p.push(`<rect class="${rr ? "oee-run" : "oee-stop"}" x="${X(a1)}" y="${Y}" width="${Math.max(0.6, x(b1) - x(a1)).toFixed(2)}" height="${BH}"/>`);
+      p.push(`<rect class="${rr > 0 ? "oee-run" : rr < 0 ? "oee-nr" : "oee-stop"}" x="${X(a1)}" y="${Y}" width="${Math.max(0.6, x(b1) - x(a1)).toFixed(2)}" height="${BH}"/>`);
     }
     // outside the shift and the break are not plan time: draw them over the record
     if (r0 < sh.start) p.push(`<rect fill="url(#oee-off)" x="${L}" y="${Y}" width="${(x(sh.start) - L).toFixed(1)}" height="${BH}"/>`);
@@ -308,11 +328,12 @@
   // the stops inside [r0, min(r1, t)], next ones with the same cause joined
   function stopsIn(r0, r1) {
     const out = [];
-    for (const [a, b, r, c] of log.segs) {
-      if (r || b <= r0 || a >= r1) continue;
+    for (const [a, b, r, c0] of log.segs) {
+      if (r > 0 || b <= r0 || a >= r1) continue;
+      const c = r < 0 ? "ไม่ได้บันทึก · " + (c0 || "") : c0 || "";       // not recorded: listed with its why
       const a1 = Math.max(a, r0), b1 = Math.min(b, r1), last = out[out.length - 1];
-      if (last && last.c === (c || "") && a1 - last.b < 1000) last.b = b1;
-      else out.push({ a: a1, b: b1, c: c || "" });
+      if (last && last.c === c && a1 - last.b < 1000) last.b = b1;
+      else out.push({ a: a1, b: b1, c });
     }
     return out.filter((s) => s.b > s.a);
   }
@@ -321,14 +342,14 @@
     const t = now(), sh = shiftOf(t);
     if (sh.bad) return;
     const r0 = sh.start, r1 = sh.end, upto = Math.min(t, r1);
-    zq("range").textContent = `${hhmm(r0)} – ${hhmm(r1)}${isDemo() ? " · demo clock" : ""}`;
+    zq("range").textContent = `${hhmm(r0)} – ${hhmm(r1)}${isDemo() ? " · simulated clock" : ""}`;
     const W = Math.max(640, Math.min(1500, zoom.querySelector(".oz-chart").clientWidth || 1000));
     const L = 16, R = W - 16, Y = 30, BH = 46;
     const x = (v) => L + ((v - r0) / (r1 - r0)) * (R - L), X = (v) => x(v).toFixed(1);
     const p = [`<rect class="oee-future" x="${L}" y="${Y}" width="${R - L}" height="${BH}"/>`];
     for (const [a, b, rr] of log.segs) {
       const a1 = Math.max(a, r0), b1 = Math.min(b, r1);
-      if (b1 > a1) p.push(`<rect class="${rr ? "oee-run" : "oee-stop"}" x="${X(a1)}" y="${Y}" width="${Math.max(0.8, x(b1) - x(a1)).toFixed(2)}" height="${BH}"/>`);
+      if (b1 > a1) p.push(`<rect class="${rr > 0 ? "oee-run" : rr < 0 ? "oee-nr" : "oee-stop"}" x="${X(a1)}" y="${Y}" width="${Math.max(0.8, x(b1) - x(a1)).toFixed(2)}" height="${BH}"/>`);
     }
     if (sh.be > sh.bs) p.push(`<rect class="oee-break" x="${X(sh.bs)}" y="${Y}" width="${(x(sh.be) - x(sh.bs)).toFixed(1)}" height="${BH}"/>`);
     p.push(`<rect class="oee-frame" x="${L}" y="${Y}" width="${R - L}" height="${BH}"/>`);
@@ -387,7 +408,7 @@
   const applySettings = (s) => {
     if (!s) return;
     let changed = false, clock = false;
-    for (const k of ["start", "work", "bstart", "blen", "cycle", "clock", "from", "to"])
+    for (const k of ["start", "shifts", "work", "bstart", "blen", "cycle", "clock", "from", "to"])
       if (s[k] !== undefined && inp[k] && String(inp[k].value) !== String(s[k])) { inp[k].value = s[k]; changed = true; if (k === "clock") clock = true; }
     if (s.win && String(s.win) !== win) { win = String(s.win); changed = true; }
     if (!changed) return;

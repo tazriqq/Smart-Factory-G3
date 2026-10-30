@@ -1843,7 +1843,8 @@ function tick(now) {
   frame = visible && !(settled && clock - rxAt > 0.2) ? requestAnimationFrame(tick) : 0;
 }
 function kick() { if (!frame && visible) { last = 0; frame = requestAnimationFrame(tick); } }
-new IntersectionObserver((entries) => { visible = true; kick(); }, { rootMargin: "120px 0px" }).observe(stage);
+// draw only while on screen (on the line this machine's slot is hidden off-screen: it never draws there)
+new IntersectionObserver((entries) => { visible = entries[entries.length - 1].isIntersecting; if (visible) kick(); else { cancelAnimationFrame(frame); frame = 0; } }, { rootMargin: "120px 0px" }).observe(stage);
 
 // ───────────────────────── input ─────────────────────────
 plate.addEventListener("click", (event) => {

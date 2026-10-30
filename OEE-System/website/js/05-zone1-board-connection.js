@@ -1,31 +1,13 @@
-// 05-zone1-board-connection.js - ZONE 1 + 2 - speed knobs and the board connection (Bluetooth / USB / Wi-Fi / MQTT)
+// 05-zone1-board-connection.js - ZONE 1 - machine speeds and the board connection (Bluetooth / USB / Wi-Fi / MQTT)
 // was <script type="module">: wrapped so its names stay private, loaded with defer (same order)
 (function () {
 "use strict";
-// Four knobs, one per machine: each sets that machine's speed, 0–200 %.
+// Four knobs, one per machine (window.pots, js/04): each sets that machine's speed, 0–200 %.
 // The board sends text lines "512,300,1023,800" (0..1023 per knob, A0..A3).
 const COUNT = 4;
 const NAMES_M = ["01 Swiss", "02 Lathe", "03 GENOS", "04 Router"];
 const $ = (id) => document.getElementById(id);
 const button = $("connect"), status = $("status");
-const adc = [...Array(COUNT)].map((_, i) => $("adc" + i));
-const posEl = [...Array(COUNT)].map((_, i) => $("pos" + i));
-const reverse = [...Array(COUNT)].map((_, i) => $("reverse" + i));
-const potHints = [...document.querySelectorAll('.pot-deck [data-corner="hint"]')];
-const dashMq = matchMedia("(min-width:1180px) and (min-height:620px)");
-const potSvgs = [...document.querySelectorAll(".pot-deck .iso-svg")];
-potSvgs.forEach((svg) => { svg.dataset.full = svg.getAttribute("viewBox"); });
-function fitKnobs() {
-  for (const svg of potSvgs) {
-    if (!dashMq.matches) { svg.setAttribute("viewBox", svg.dataset.full); svg.style.aspectRatio = ""; continue; }
-    svg.setAttribute("viewBox", svg.dataset.full);
-    const b = svg.getBBox(), pad = 8;
-    svg.setAttribute("viewBox", [b.x - pad, b.y - pad, b.width + 2 * pad, b.height + 2 * pad].map((v) => v.toFixed(1)).join(" "));
-    svg.style.aspectRatio = String((b.width + 2 * pad) / (b.height + 2 * pad));
-  }
-}
-fitKnobs();
-dashMq.addEventListener("change", fitKnobs);
 const say = (text) => { status.textContent = text; };
 // connection pill next to the Connect button: not connected / connecting / connected (and whether data arrives)
 const pill = $("conn-pill"), pillText = pill.querySelector("span");
@@ -35,6 +17,10 @@ setInterval(() => {
   if (!conn) return;
   // the control page resends every 2 s, but a browser slows a hidden tab down to about once a second or less
   const now = performance.now(), fromControl = !window.__board.live && now - controlAt < 10000, quiet = !fromControl && now - lastData > 2500;
+  // the real line, and this page no longer hears the hub: that time is not recorded either
+  if (viewOnly && (controlSrc === "board" || controlSrc === "none") && controlMsgAt && now - controlMsgAt > 15000)
+    window.__lineWait = "หน้าเว็บขาดการเชื่อมต่อกับ server";
+  if (viewOnly && window.__lineWait) { setPill("quiet", "Not recorded · " + window.__lineWait); return; }
   // the control page decides: its "src" says whether the line follows the board or the control page's simulator
   if (viewOnly && controlSrc === "sim") { setPill(fromControl ? "on" : "quiet", fromControl ? "Live · control via website" : "Control via website · waiting for the control page"); return; }
   if (viewOnly && controlSrc === "board" && !window.__board.live) { setPill("quiet", "Via board · waiting for the board"); return; }
@@ -49,7 +35,6 @@ const speedOf = (t) => Math.round(t * 40) / 20;          // 5 % steps
 function show(i, t) {
   const s = speedOf(t);
   window.__speeds[i] = s;
-  posEl[i].textContent = String(Math.round(s * 100));
   window.__line?.speedChanged?.(i, s);
 }
 window.onPotTurn = (i, t) => show(i, t);
@@ -150,11 +135,9 @@ let conn = null, gen = 0;
 function apply(i, value) {
   if (i >= COUNT) return;
   lastAdc[i] = value;
-  adc[i].textContent = String(value).padStart(4, " ");
   const share = value / 1023;
-  window.pots[i].hold(reverse[i].checked ? 1 - share : share);
+  window.pots[i].hold(share);
 }
-reverse.forEach((box, i) => box.addEventListener("change", () => { if (lastAdc[i] !== null) apply(i, lastAdc[i]); }));
 function handle(line) {
   lastData = performance.now();
   if (line.startsWith("{")) {            // the machine-signal board: JSON line
@@ -198,7 +181,6 @@ function connected(kind, close, setRoute) {
   window.__board.setRoute = setRoute || null;
   lastData = performance.now();
   setPill("on", "Connected · " + NAMES[kind]);
-  potHints.forEach((h) => { h.textContent = "Set by the board"; });
   syncSource();
   say("Connected by " + NAMES[kind] + ". Knobs set speed · run switches start / stop machines 1–4 · alarm stops the line · part buttons finish a part · Good / Reject go to the OEE panel.");
 }
@@ -210,8 +192,6 @@ async function disconnect(message) {
   if (c) { try { await c.close(); } catch {} }
   lastAdc.fill(null);
   window.__board.stop();
-  adc.forEach((el) => { el.textContent = "—"; });
-  potHints.forEach((h) => { h.textContent = "Drag to slide"; });
   window.pots.forEach((p) => p.release());
   syncSource();
   say(message);
@@ -311,13 +291,34 @@ async function openMqtt(my) {
 // (retained, so it also arrives right after connecting). good / rej count up per control-page session.
 // src: "board" = the control page connected the board, the line follows the board; "sim" = the control page is the
 // board (its simulator), even while the real board is sending. Pages from before src existed: the board wins.
-let lastControl = null, controlAt = 0, controlSrc = null;
+let lastControl = null, controlAt = 0, controlSrc = null, controlMsgAt = 0;
+// the real line is the board only: while the hub waits for it (src "none") or this page stops hearing the hub,
+// window.__lineWait says why, the line stands, and the OEE panel records that time as not recorded
+window.__lineWait = "";
+// the line's clock (server/control-hub): real time, or the control page's simulated clock for test cases.
+// window.__lineClock.now() = the line's time in ms; the hub's wall clock (m.ms) corrects this computer's.
+function followClock(m) {
+  const c = m.clock;
+  if (!c || (c.mode !== "real" && c.mode !== "sim")) return;
+  const skew = typeof m.ms === "number" ? m.ms - Date.now() : 0;
+  window.__lineClock = { mode: c.mode, speed: c.mode === "sim" ? c.speed : 1, paused: !!c.paused,
+    now: c.mode === "sim" ? () => (c.paused ? c.base_v : c.base_v + (Date.now() + skew - c.base_r) * c.speed) : () => Date.now() };
+}
 function followControl(m) {
-  controlSrc = m.src === "sim" || m.src === "board" ? m.src : null;
+  followClock(m);
+  controlMsgAt = performance.now();
+  controlSrc = m.src === "sim" || m.src === "board" || m.src === "none" ? m.src : null;
+  window.__lineWait = controlSrc === "none" ? m.board_wait || "รอบอร์ด" : "";
   if (m.items) window.__line?.setItems?.(m.items, m.line, m.lineName);   // what is being made, whichever source drives the line
   if (m.shift) window.oee?.applySettings?.(m.shift);          // the shift and time frame, set on the control page
   if (m.links) window.oee?.setLinks?.(m.links);               // the server's extra links (LINKS in server/.env)
   if (lastControl && lastControl.id === m.id && (m.clear >>> 0) > (lastControl.clear >>> 0)) window.oee?.clear?.();
+  if (controlSrc === "none") {                       // no simulator in its place: the line stands
+    if (window.__board.live) window.__board.stop();
+    window.__line?.setRunning?.(false);
+    lastControl = m;
+    return;
+  }
   if (controlSrc === "board") { lastControl = m; return; }
   if (controlSrc === "sim" && window.__board.live) window.__board.stop();   // let go of the board at once
   if (window.__board.live || !Array.isArray(m.pot) || !Array.isArray(m.run)) return;   // the board wins

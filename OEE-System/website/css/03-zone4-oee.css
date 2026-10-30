@@ -39,6 +39,7 @@
 .oee-off-line{stroke:var(--anatomy-lo);stroke-width:.8}
 .oee-run{fill:var(--oee-run)}
 .oee-stop{fill:var(--oee-stop)}
+.oee-nr{fill:var(--anatomy-muted);opacity:.45}   /* not recorded: the real line without its board, with why */
 .oee-break{fill:var(--anatomy-shade-2);stroke:var(--anatomy-mid);stroke-width:.8}
 .oee-frame{fill:none;stroke:var(--anatomy-mid);stroke-width:1}
 .oee-dim{fill:var(--anatomy-card);opacity:.68}
@@ -66,6 +67,7 @@
 .oee-sw-run{background:var(--oee-run)}
 .oee-sw-stop{background:var(--oee-stop)}
 .oee-sw-break{background:var(--anatomy-shade-2)}
+.oee-sw-nr{background:var(--anatomy-muted);opacity:.45}
 .oee-sw-gap{background:repeating-linear-gradient(45deg,var(--anatomy-paper) 0 3px,var(--anatomy-faint) 3px 4.5px)}
 .oee-sw-win{background:transparent;box-shadow:0 0 0 1.6px var(--anatomy-strong)}
 .iso{--oee-run:#3aa676;--oee-stop:#e5484d}

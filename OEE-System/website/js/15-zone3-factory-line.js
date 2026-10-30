@@ -757,7 +757,7 @@ let last = performance.now();
   const dt = Math.min(0.1, (now - last) / 1000); last = now;
   if (running) { let rem = dt * speed; while (rem > 0) { const h = Math.min(rem, 0.05); step(h); rem -= h; } sampleHist(); }
   render();
-  requestAnimationFrame(frame);
+  (window.__mx?.raf || requestAnimationFrame)(frame);   // in step with the machine drawings, 30 frames a second
 })(last);
 
 /* ---------- controls ---------- */
@@ -863,6 +863,17 @@ od.innerHTML = `<div class="od-in">
     <div class="od-lg">${MACHINES.map((m, i) => `<span><i style="background:${SER[i]};height:3px;width:14px"></i>${m.no} ${m.name}</span>`).join('')}</div>
     <div class="od-chart" data-d="chart"><svg></svg><div class="od-tip" hidden></div></div></div>
   <div class="od-card"><h3>Table</h3><div class="od-tw" data-d="table"></div></div>
+  <div class="od-sec od-dbh"><h3>จาก database · วันนี้</h3>
+    <span class="od-seg" role="group" aria-label="ข้อมูลของ"><button type="button" data-src="board">บอร์ด</button><button type="button" data-src="sim">ไลน์จำลอง</button><button type="button" data-src="test">ทดสอบ</button></span>
+    <small data-db="note"></small></div>
+  <div class="od-card"><div class="od-kpis" data-db="kpis"></div></div>
+  <div class="od-dbg">
+    <div class="od-card"><h3>OEE ของไลน์ · 14 วันล่าสุด</h3><div class="od-bars" data-db="days"></div></div>
+    <div class="od-card"><h3>ชิ้นงานต่อชั่วโมง · วันนี้ (ทุกเครื่อง)</h3><div class="od-bars" data-db="hours"></div></div>
+  </div>
+  <div class="od-card"><h3>แต่ละเครื่อง · วันนี้</h3><div class="od-tw" data-db="machines"></div></div>
+  <div class="od-card"><h3>Products · วันนี้</h3><div class="od-tw" data-db="products"></div></div>
+  <div class="od-card" data-db="gapcard"><h3>ช่วงที่ไม่ได้บันทึก · บอร์ด (ไลน์จริงนับจากบอร์ดเท่านั้น)</h3><div class="od-tw" data-db="gaps"></div></div>
 </div>`;
 document.body.appendChild(od);
 const $d = (k) => od.querySelector(`[data-d="${k}"]`);
@@ -974,12 +985,78 @@ function centreTabs() {
 addEventListener('resize', centreTabs);
 setTimeout(centreTabs, 0); setTimeout(centreTabs, 1500);   // again once the line name and the status pill are in
 addEventListener('scroll', placeDash, { passive: true });
+// ───────── the database's OEE (server/oee-api): the board's, or the simulated line's (control page, no board) ─────────
+// Asked when the tab opens and every minute while it is open; the server keeps one answer per 30 s for all pages.
+let dbSrc = null, dbData = null, dbErr = '', dbBusy = false;
+const $b = (k) => od.querySelector(`[data-db="${k}"]`);
+const testing = () => !!(window.__lineClock && window.__lineClock.mode === 'sim');
+const dbSource = () => dbSrc || (boardLive() ? 'board' : testing() ? 'test' : 'sim');   // follows the line until a button is pressed
+// test data sits at the simulated clock's times: ask for the day that clock is on (Thailand date)
+const dbDay = () => (dbSource() === 'test' && window.__lineClock ? new Date(window.__lineClock.now() + 7 * 3600e3).toISOString().slice(0, 10) : '');
+const hm = (t) => (t ? new Date(t).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', hour12: false }) : '—');
+const escH = (t) => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
+async function loadDb() {
+  if (dbBusy) return;
+  dbBusy = true;
+  try {
+    const r = await fetch('api/db?source=' + dbSource() + (dbDay() ? '&day=' + dbDay() : ''), { cache: 'no-store' });
+    if (!r.ok) throw new Error(r.status === 503 ? 'database ไม่ตอบ' : 'HTTP ' + r.status);
+    dbData = await r.json(); dbErr = '';
+  } catch (e) {
+    dbErr = location.hostname === '192.168.1.200' ? 'หน้าเว็บในบอร์ดไม่มี database (เปิดจาก server แทน)' : 'ดึงข้อมูลไม่ได้: ' + e.message;
+  }
+  dbBusy = false;
+  drawDb();
+}
+// bars: [{label, value 0..max, text, title}]
+const bars = (items, max) => items.length ? items.map((x) => `<div class="od-bc" title="${escH(x.title)}"><em>${escH(x.text)}</em>
+  <span><i style="height:${x.value == null ? 0 : Math.max(2, Math.min(100, (x.value / (max || 1)) * 100))}%"></i></span><small>${escH(x.label)}</small></div>`).join('')
+  : '<div class="od-empty">ยังไม่มีข้อมูล</div>';
+function drawDb() {
+  const src = dbSource(), d = dbData && dbData.source === src ? dbData : null;
+  od.querySelectorAll('.od-seg [data-src]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.src === src)));
+  const what = src === 'test' ? `ทดสอบ · นาฬิกาจำลอง วันที่ ${d ? d.date : dbDay()}` : src === 'sim' ? 'ไลน์จำลองบน server (ค่าจากหน้า control)' : 'บอร์ดจริง';
+  const last = d && (src === 'board' ? d.status.last_signal : src === 'sim' ? d.status.last_sim_minute : null);
+  $b('note').textContent = dbErr ? '⚠ ' + dbErr : d ? `${what}${last ? ' · ข้อมูลล่าสุด ' + hm(last) : ''} · ดึงเมื่อ ${hm(d.at)} · อัปเดตทุก 1 นาที` : 'กำลังดึงข้อมูล…';
+  if (!d) return;
+  const day = d.days.find((x) => x.day === d.date) || {}, out = d.products.reduce((n, p) => n + p.output, 0);
+  const good = d.products.reduce((n, p) => n + p.good, 0), rej = d.products.reduce((n, p) => n + p.reject, 0);
+  $b('kpis').innerHTML = [
+    ['OEE ไลน์', pct(day.oee), 'A × P × Q · ทั้งไลน์'],
+    ['A · Availability', pct(day.availability), `เดิน ${Math.round(day.run_min || 0)} / ${Math.round(day.logged_min || 0)} นาที`],
+    ['P · Performance', pct(day.performance), 'เวลามาตรฐาน ÷ เวลาเดิน (ไม่เกิน 100 %)'],
+    ['Q · Quality', pct(day.quality), `ดี ${good} · เสีย ${rej}`],
+    ['Output', out, 'ชิ้นที่ออกจากปลายเส้นทาง'],
+  ].map(([k, v, e]) => `<div class="od-kpi"><small>${k}</small><b>${v}</b><em>${e}</em></div>`).join('');
+  $b('days').innerHTML = bars(d.days.map((x) => ({ label: x.day.slice(8) + '/' + x.day.slice(5, 7), value: x.oee == null ? null : x.oee * 100,
+    text: x.oee == null ? '—' : Math.round(x.oee * 100) + '%', title: `${x.day} · A ${pct(x.availability)} · P ${pct(x.performance)} · Q ${pct(x.quality)} · ${x.parts} ชิ้น` })), 100);
+  const maxParts = Math.max(1, ...d.hours.map((x) => x.parts));
+  $b('hours').innerHTML = bars(d.hours.map((x) => ({ label: hm(x.hour).slice(0, 2), value: x.parts, text: String(x.parts),
+    title: `${hm(x.hour)} · ${x.parts} ชิ้น · เดิน ${Math.round(x.run_min)} / ${Math.round(x.logged_min)} นาที` })), maxParts);
+  $b('machines').innerHTML = d.today.length ? `<table><thead><tr><th>เครื่อง</th><th>product</th><th>OEE</th><th>A</th><th>P</th><th>Q</th><th>ชิ้น</th><th>เดิน</th><th>หยุด</th><th>alarm</th></tr></thead><tbody>${
+    d.today.map((m) => `<tr><td>${escH(m.name || 'M' + m.machine)}</td><td>${escH(m.product || 'idle')}</td><td>${pct(m.oee)}</td><td>${pct(m.availability)}</td><td>${pct(m.performance)}</td><td>${pct(m.quality)}</td><td>${m.parts}</td><td>${Math.round(m.run_min)} min</td><td>${Math.round(m.stop_min)} min</td><td>${Math.round(m.alarm_min)} min</td></tr>`).join('')}</tbody></table>`
+    : '<div class="od-empty">วันนี้ยังไม่มีข้อมูล</div>';
+  $b('products').innerHTML = d.products.length ? `<table><thead><tr><th>product</th><th>output</th><th>good</th><th>scrap</th><th>yield</th></tr></thead><tbody>${
+    d.products.map((p) => `<tr><td>${escH(p.product)}${p.code || p.name ? ' · ' + escH([p.code, p.name].filter(Boolean).join(' ')) : ''}</td><td>${p.output}</td><td>${p.good}</td><td>${p.reject}</td><td>${pct(p.quality)}</td></tr>`).join('')}</tbody></table>`
+    : '<div class="od-empty">วันนี้ยังไม่มีข้อมูล</div>';
+  const gaps = d.not_recorded || [];
+  $b('gapcard').hidden = src !== 'board';
+  $b('gaps').innerHTML = gaps.length ? `<table><thead><tr><th>ตั้งแต่</th><th>ถึง</th><th>นาน</th><th>สาเหตุ</th></tr></thead><tbody>${
+    gaps.map((g) => `<tr><td>${hm(g.gap_from)}</td><td>${hm(g.gap_to)}</td><td>${g.minutes >= 60 ? (g.minutes / 60).toFixed(1) + ' ชม.' : Math.round(g.minutes) + ' นาที'}</td><td style="text-align:left">${escH(g.reason)}</td></tr>`).join('')}</tbody></table>`
+    : '<div class="od-empty">วันนี้บันทึกครบ ไม่มีช่วงที่ขาด</div>';
+}
+od.querySelector('.od-seg').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-src]');
+  if (!b) return;
+  dbSrc = b.dataset.src; drawDb(); loadDb();
+});
+setInterval(() => { if (!od.hidden && !document.hidden) loadDb(); }, 60000);
 function showTab(name) {
   tabs.querySelectorAll('[data-tab]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === name)));
   od.hidden = name !== 'oee';
   placeDash();
   document.body.classList.toggle('od-open', !od.hidden);
-  if (!od.hidden) renderDash();
+  if (!od.hidden) { renderDash(); loadDb(); }
   try { localStorage.setItem('lf-tab', name); } catch {}
 }
 tabs.addEventListener('click', (e) => { const b = e.target.closest('[data-tab]'); if (b) showTab(b.dataset.tab); });
@@ -1060,20 +1137,8 @@ const setFull = (cls) => {
   }
 };
 for (const [c, [b]] of Object.entries(fullBtns)) b.addEventListener('click', () => setFull(fullOf() === c ? null : c));
-// left panel: slide out / back in
-const knobsBtn = document.querySelector('.knobs-toggle');
-const setKnobs = (hidden) => {
-  document.body.classList.toggle('knobs-hidden', hidden);
-  knobsBtn.setAttribute('aria-expanded', !hidden); knobsBtn.textContent = hidden ? '›' : '‹';
-  knobsBtn.title = hidden ? 'Show left panel' : 'Hide left panel'; knobsBtn.setAttribute('aria-label', knobsBtn.title);
-  try { localStorage.setItem('knobs-hidden', hidden ? '1' : ''); } catch {}
-};
-// the left panel's controls moved to their own page (control.html): the panel stays hidden (its knobs and
-// switches still take the control page's values), and its button opens that page
-setKnobs(true);
-const controlUrl = /^oee\./.test(location.hostname) ? location.protocol + '//' + location.hostname.replace(/^oee\./, 'control.') + '/' : 'control.html';
-const controlLink = Object.assign(document.createElement('a'), { className: 'lb-btn knobs-toggle', href: controlUrl, target: '_blank', rel: 'noopener', textContent: 'Control ↗', title: 'Line controls (knobs, run switches, doors, alarm, QC) on their own page' });
-knobsBtn.replaceWith(controlLink);
+// the line's controls are on their own page: the header's Control link, at control.<domain> when this is oee.<domain>
+if (/^oee\./.test(location.hostname)) document.querySelector('.knobs-toggle').href = location.protocol + '//' + location.hostname.replace(/^oee\./, 'control.') + '/';
 addEventListener('keydown', (e) => {
   if (e.target.closest('input, select, textarea') || e.ctrlKey || e.metaKey || e.altKey) return;
   if (e.key === 'Escape' && fullOf()) setFull(null);
@@ -1223,12 +1288,20 @@ const routeUi = (() => {
 window.__line = { MACHINES, BELTS, slots, placeTags, fit, oeeOf, speedChanged() {}, finish(i) { const s = st[i]; if (s && s.mode === 'run') s.t = Math.max(s.t, MACHINES[i].cycle); },
   // the control page (control.html) runs the simulation: play / pause, time speed, reset, set-up per machine
   setRunning(on) { if (running !== !!on) setRunning(!!on); },
-  setSpeed(n) { const b = document.querySelector(`.line-bar [data-speed="${n}"]`); if (b && speed !== n) b.click(); },
+  // the line's time speed, from the control page's clock (1x real time, or 10x / 60x on its simulated clock)
+  setSpeed(n) {
+    if (!(n > 0) || speed === n) return;
+    const b = document.querySelector(`.line-bar [data-speed="${n}"]`);
+    if (b) return b.click();
+    speed = n;
+    document.querySelectorAll('.line-bar [data-speed]').forEach((x) => x.setAttribute('aria-pressed', 'false'));
+  },
   reset,
   setRouteText(t) { const r = parseRoute(t); if (r) setRoute(r); },
   // why the line is stopped right now ("" = running): the alarm, a paused simulation, or each machine on a
   // product route that stands still, and why. The OEE panel keeps it with each stop in its timeline.
   stopCause() {
+    if (window.__lineWait) return 'ไม่ได้บันทึก · ' + window.__lineWait;   // the real line without its board
     const b = BOARD(), s = b && (b.live ? b : b.local);
     if (s && s.al) return 'ALARM · E-stop';
     if (!boardLive() && !running) return 'simulation paused';

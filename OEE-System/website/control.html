@@ -68,7 +68,9 @@ button,input{font:inherit}
 .route{margin-left:auto;font:12px var(--mono);color:var(--muted)}
 .route i{display:inline-grid;place-items:center;min-width:16px;height:16px;padding:0 4px;margin:0 4px 0 8px;font:600 10px var(--mono);font-style:normal;color:#fff;background:var(--pa)}
 .route i.b{background:var(--pb)}
-body[data-mode="monitor"] .ctl{display:none!important}
+body[data-mode="monitor"] .ctl,body[data-mode="wait"] .ctl{display:none!important}
+.mode[data-m="wait"]{box-shadow:0 0 0 1.5px var(--amber)}
+.mode[data-m="wait"] b{color:var(--amber)}
 body:not([data-mode="off"]) :is(#url,#user,#pass,.login){display:none!important}
 body:not([data-mode="off"]) #go,#share{padding:4px 10px;font-size:12px}
 /* share login: a QR code (and the link) another device opens to be logged in at once */
@@ -152,6 +154,18 @@ body:not([data-mode="monitor"]) .mon{display:none!important}
 #sh-sum{font:12px var(--mono);color:var(--muted);margin-top:8px}
 /* simulation */
 .sim{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px}
+/* the line's clock: real time, or a simulated clock for test cases (kept by the server's control-hub) */
+.lc{display:grid;gap:10px}
+.lc-top{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px}
+.lc-time{font:600 30px/1.1 var(--mono);color:var(--strong);font-variant-numeric:tabular-nums;letter-spacing:.02em}
+.lc-time small{display:block;font:500 12px var(--mono);color:var(--muted);letter-spacing:0}
+.lc-badge{font:600 11px var(--mono);padding:4px 9px;border-radius:6px;background:var(--green-bg);color:var(--green)}
+.lc[data-mode="sim"] .lc-badge{background:var(--amber-bg);color:var(--amber)}
+.lc[data-mode="sim"]{box-shadow:var(--shadow),inset 3px 0 0 var(--amber)}
+.lc-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px}
+.lc-row .k{min-width:72px}
+.lc[data-mode="real"] .lc-sim{display:none}
+.lc .note{font:12px var(--mono);color:var(--muted)}
 .seg{display:inline-flex}.seg .btn{border-radius:0}.seg .btn:first-child{border-radius:7px 0 0 7px}.seg .btn:last-child{border-radius:0 7px 7px 0}
 .btn[data-armed]{color:var(--red);box-shadow:inset 0 0 0 1px var(--red)}
 input[type=range]{width:100%;margin:6px 0;accent-color:var(--strong)}
@@ -311,10 +325,27 @@ main>*{min-width:0}
     <button class="btn" id="use-board" type="button" hidden></button>
   </section>
 
+  <section class="card lc" id="lc" data-mode="real" aria-label="Line clock">
+    <div class="lc-top">
+      <span class="k">นาฬิกาของไลน์ · ทุกจอใช้นาฬิกานี้</span><span class="grow"></span>
+      <span class="seg" role="group" aria-label="Clock"><button class="btn" type="button" data-lc-mode="real">เวลาจริง</button><button class="btn" type="button" data-lc-mode="sim">นาฬิกาจำลอง</button></span>
+    </div>
+    <div class="lc-top"><div class="lc-time" id="lc-time">--:--:--<small>—</small></div><span class="lc-badge" id="lc-badge">เวลาจริง · บันทึกเป็นข้อมูลจริง</span></div>
+    <div class="lc-row lc-sim"><span class="k">ความเร็ว</span>
+      <span class="seg" role="group" aria-label="Clock speed"><button class="btn" type="button" data-lc-speed="1">1×</button><button class="btn" type="button" data-lc-speed="10">10×</button><button class="btn" type="button" data-lc-speed="60">60× · 1 วิ = 1 นาที</button></span>
+      <button class="btn" type="button" id="lc-pause">❚❚ หยุดเวลา</button></div>
+    <div class="lc-row lc-sim"><span class="k">ไปที่เวลา</span>
+      <input class="in" type="datetime-local" id="lc-at" step="60"><button class="btn" type="button" id="lc-go">ไป</button></div>
+    <div class="lc-row lc-sim"><span class="k">ทางลัด</span>
+      <button class="btn" type="button" data-lc-jump="start">ต้นกะ</button><button class="btn" type="button" data-lc-jump="break">5 นาทีก่อนพัก</button>
+      <button class="btn" type="button" data-lc-jump="end">5 นาทีก่อนจบกะ</button><button class="btn" type="button" data-lc-jump="hour">+1 ชม.</button>
+      <button class="btn" type="button" data-lc-jump="next">ต้นกะถัดไป</button></div>
+    <div class="note" id="lc-note">—</div>
+  </section>
+
   <section class="card sim ctl" aria-label="Simulation">
     <span class="k">Line simulation · บน dashboard</span>
     <button class="btn" id="sim-run" type="button" aria-pressed="true">❚❚ Pause line</button>
-    <span class="seg" role="group" aria-label="Time speed"><button class="btn" data-speed="1" type="button">1×</button><button class="btn" data-speed="4" type="button" aria-pressed="true">4×</button><button class="btn" data-speed="10" type="button">10×</button></span>
     <span class="grow"></span>
     <button class="btn" id="sim-reset" type="button">⟲ Reset line</button>
   </section>
@@ -347,12 +378,12 @@ main>*{min-width:0}
     <div class="log-h"><span class="k">Shift & time frame · แผง OEE ของทุกจอใช้ค่านี้</span><span class="grow"></span><button class="btn" id="oee-clear" type="button">Clear OEE record</button></div>
     <div class="sh-form">
       <label>Shift start<input class="in" type="time" data-s="start"></label>
-      <label>Work, h<input class="in" type="number" min="1" max="16" step="0.5" data-s="work"></label>
-      <label>Shift end<input class="in" type="time" data-s="end" readonly title="start + work hours + break"></label>
+      <label>Shifts<select class="in" data-s="shifts" title="กะต่อวัน ต่อกันไป: แต่ละกะยาว ชั่วโมงทำงาน + พัก"><option value="1">1</option><option value="2">2</option><option value="3">3</option></select></label>
+      <label>Work, h / shift<input class="in" type="number" min="1" max="16" step="0.5" data-s="work"></label>
+      <label>Last shift ends<input class="in" type="time" data-s="end" readonly title="start + shifts × (work hours + break)"></label>
       <label>Break start<input class="in" type="time" data-s="bstart"></label>
       <label>Break, min<input class="in" type="number" min="0" max="480" step="5" data-s="blen"></label>
       <label>Ideal cycle, s<input class="in" type="number" min="1" max="36000" step="1" data-s="cycle"></label>
-      <label>Clock<select class="in" data-s="clock"><option value="real">Real time</option><option value="demo">Demo · 1 s = 1 min</option></select></label>
     </div>
     <div class="sh-form">
       <label>Time frame<span class="seg" role="radiogroup" aria-label="Time frame"><button class="btn" type="button" data-win="15">15 min</button><button class="btn" type="button" data-win="60">1 h</button><button class="btn" type="button" data-win="240">4 h</button><button class="btn" type="button" data-win="shift">Shift</button><button class="btn" type="button" data-win="custom">Custom</button></span></label>
@@ -558,14 +589,14 @@ const ctl = { pot: [512, 512, 512, 512], run: [1, 1, 1, 1], door: [0, 0, 0, 0], 
   setup: [0, 0, 0, 0], maint: [0, 0, 0, 0], sim: { run: 1, speed: 4 }, route: "1234-", useBoard: 1,
   items: { A: { code: "", name: "" }, B: { code: "", name: "" } },
   qc: { A: { good: 0, rej: 0 }, B: { good: 0, rej: 0 } },
-  shift: { start: "08:00", work: 8, bstart: "12:00", blen: 60, cycle: 120, clock: "demo", win: "shift", from: "08:00", to: "17:00" },
+  shift: { start: "08:00", work: 8, bstart: "12:00", blen: 60, cycle: 120, clock: "demo", win: "shift", from: "08:00", to: "17:00", shifts: 1 },
   clear: 0 };   // what this page shows
 let S = null, dragging = -1, sendTimer = 0;   // S: the hub's state as last received
 const sent = {};                              // values sent but not yet back from the hub
 const KEYS = () => [0, 1, 2, 3].flatMap((i) => ["pot", "run", "door", "setup", "maint"].map((k) => [`${k}.${i}`, ctl[k][i], (S[k] || [])[i]]))
-  .concat([["al", ctl.al, S.al], ["useBoard", ctl.useBoard, S.useBoard], ["route", ctl.route, S.route], ["sim.run", ctl.sim.run, S.sim.run], ["sim.speed", ctl.sim.speed, S.sim.speed]])
+  .concat([["al", ctl.al, S.al], ["useBoard", ctl.useBoard, S.useBoard], ["route", ctl.route, S.route], ["sim.run", ctl.sim.run, S.sim.run]])   // sim.speed: from the line's clock (the hub)
   .concat(["A", "B"].flatMap((p) => ["code", "name"].map((f) => [`item.${p}.${f}`, ctl.items[p][f], ((S.items || {})[p] || {})[f] ?? ""])))
-  .concat(Object.keys(ctl.shift).map((f) => [`shift.${f}`, ctl.shift[f], (S.shift || {})[f]]));
+  .concat(Object.keys(ctl.shift).filter((f) => f !== "clock").map((f) => [`shift.${f}`, ctl.shift[f], (S.shift || {})[f]]));   // clock: the hub's
 function command(m) {
   if (!client || !client.connected) return;
   const text = JSON.stringify({ ...m, by: ME });
@@ -617,6 +648,7 @@ function onState(text) {
   ctl.pot = m.pot.map((v, i) => (i === dragging ? ctl.pot[i] : v));
   for (const k of ["al", "useBoard", "route", "good", "rej", "undo", "reset"]) ctl[k] = m[k];
   ctl.sim = { ...m.sim };
+  followClockState(m);
   // product code / name: not over what someone is typing here
   for (const p of ["A", "B"]) for (const f of ["code", "name"]) {
     const box = document.querySelector(`.rt-row[data-p="${p === "A" ? 0 : 1}"] .it-${f}`);
@@ -657,7 +689,6 @@ function renderCtl() {
   showQc(ctl.good, ctl.rej, "—");
   if (typeof BD === "function") BD(ctl);
   $("sim-run").setAttribute("aria-pressed", String(!!ctl.sim.run)); $("sim-run").textContent = ctl.sim.run ? "❚❚ Pause line" : "▶ Run line";
-  document.querySelectorAll(".sim [data-speed]").forEach((b) => b.setAttribute("aria-pressed", String(+b.dataset.speed === ctl.sim.speed)));
 }
 cards.forEach((c, i) => {
   c.run.addEventListener("click", () => { if (ctl.run[i]) return; ctl.run[i] = 1; sendCtl(`M${i + 1} RUN`, "g"); });
@@ -672,21 +703,27 @@ $("al-btn").addEventListener("click", () => { ctl.al = ctl.al ? 0 : 1; sendCtl(c
 // shift & time frame: every dashboard's OEE panel follows these (the hub keeps them)
 const toMin = (v) => { const m = /^(\d{2}):(\d{2})$/.exec(v || ""); return m ? +m[1] * 60 + +m[2] : NaN; };
 const hm = (n) => String(Math.floor(n / 60) % 24).padStart(2, "0") + ":" + String(n % 60).padStart(2, "0");
+// the shifts of a day: n of them one after the other, each work hours + break long; their break at the same place
+const shiftSpan = (sh) => Math.round(Number(sh.work) * 60) + Number(sh.blen || 0);
+const shiftList = (sh) => Array.from({ length: Number(sh.shifts) || 1 }, (_, k) => [toMin(sh.start) + k * shiftSpan(sh), toMin(sh.start) + (k + 1) * shiftSpan(sh)]);
 function renderShift() {
-  const sh = ctl.shift, end = toMin(sh.start) + Math.round(sh.work * 60) + (sh.blen || 0);
+  const sh = ctl.shift, list = shiftList(sh), end = list[list.length - 1][1];
   document.querySelectorAll(".sh-form [data-s]").forEach((box) => {
-    const f = box.dataset.s, v = f === "end" ? (Number.isFinite(end) ? hm(Math.min(end, 1439)) : "") : sh[f];
+    const f = box.dataset.s, v = f === "end" ? (Number.isFinite(end) ? hm(((end % 1440) + 1440) % 1440) : "") : sh[f];
     if (document.activeElement !== box && String(box.value) !== String(v)) box.value = v;
   });
   document.querySelectorAll(".sh-form [data-win]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.win === sh.win)));
-  $("sh-sum").textContent = `กะ ${sh.start}–${Number.isFinite(end) ? hm(Math.min(end, 1439)) : "?"} · พัก ${sh.bstart} (${sh.blen} นาที) · ideal cycle ${sh.cycle} s · ${sh.clock === "demo" ? "demo clock (1 วินาที = 1 นาที)" : "เวลาจริง"} · time frame: ${{ 15: "15 นาทีล่าสุด", 60: "1 ชม. ล่าสุด", 240: "4 ชม. ล่าสุด", shift: "ทั้งกะ", custom: sh.from + "–" + sh.to }[sh.win]}`;
+  const into = ((toMin(sh.bstart) - toMin(sh.start)) % 1440 + 1440) % 1440, h = (m) => hm(((m % 1440) + 1440) % 1440);
+  const fits = list.length * shiftSpan(sh) <= 1440 ? "" : " · ⚠ กะเกิน 24 ชม.";
+  $("sh-sum").textContent = `${list.map(([a, b], k) => `กะ ${list.length > 1 ? k + 1 + " " : ""}${h(a)}–${h(b)} (พัก ${h(a + into)})`).join(" · ")}${fits} · พักกะละ ${sh.blen} นาที · ideal cycle ${sh.cycle} s · ${sh.clock === "demo" ? "demo clock (1 วินาที = 1 นาที)" : "เวลาจริง"} · time frame: ${{ 15: "15 นาทีล่าสุด", 60: "1 ชม. ล่าสุด", 240: "4 ชม. ล่าสุด", shift: "ทั้งกะ", custom: sh.from + "–" + sh.to }[sh.win]}`;
 }
 document.querySelectorAll(".sh-form [data-s]").forEach((box) => {
   const f = box.dataset.s;
   if (f === "end") return;
   box.addEventListener("change", () => {
-    const v = box.type === "number" ? Number(box.value) : box.value;
-    if (box.type === "number" && !Number.isFinite(v)) return renderShift();
+    const num = box.type === "number" || f === "shifts";
+    const v = num ? Number(box.value) : box.value;
+    if (num && !Number.isFinite(v)) return renderShift();
     ctl.shift[f] = v;
     if (f === "from" || f === "to") ctl.shift.win = "custom";
     renderShift(); sendCtl(`shift ${f} → ${v}`, "n");
@@ -753,7 +790,60 @@ function renderQcp() {
 setInterval(renderQcp, 500);
 $("q-undo-btn").addEventListener("click", () => { press("undo"); sendCtl("QC undo last", "n"); });
 $("sim-run").addEventListener("click", () => { ctl.sim.run = ctl.sim.run ? 0 : 1; sendCtl(ctl.sim.run ? "line running" : "line paused", "n"); });
-document.querySelectorAll(".sim [data-speed]").forEach((b) => b.addEventListener("click", () => { ctl.sim.speed = +b.dataset.speed; sendCtl(`time speed ${ctl.sim.speed}×`, "n"); }));
+// ───────── the line's clock: real time, or a simulated clock for test cases ─────────
+// The hub keeps it ({mode, speed, paused, base_v, base_r}); while simulated, what the simulated line records is
+// source test, at the simulated time. now = base_v + (hub wall ms - base_r) x speed.
+let LC = { mode: "real", speed: 1, paused: 0, base_v: 0, base_r: 0 }, lcSkew = 0;
+const lcNow = () => (LC.mode !== "sim" ? Date.now() : LC.paused ? LC.base_v : LC.base_v + (Date.now() + lcSkew - LC.base_r) * LC.speed);
+const TH = 7 * 3600e3, MINUTE = 60e3;
+const thParts = (t) => new Date(t + TH).toISOString();                         // Thailand time as an ISO string
+const thMidnight = (t) => Date.parse(thParts(t).slice(0, 10) + "T00:00:00Z") - TH;
+const toMinOf = (hhmm) => { const [h, m] = String(hhmm || "0:0").split(":").map(Number); return h * 60 + m; };
+function drawClock() {
+  const t = lcNow(), iso = thParts(t), sim = LC.mode === "sim";
+  $("lc").dataset.mode = LC.mode;
+  const days = ["อา.", "จ.", "อ.", "พ.", "พฤ.", "ศ.", "ส."];
+  $("lc-time").innerHTML = `${iso.slice(11, 19)}<small>${days[new Date(t + TH).getUTCDay()]} ${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}${sim ? ` · ${LC.paused ? "หยุดอยู่" : LC.speed + "×"}` : ""}</small>`;
+  $("lc-badge").textContent = sim ? "นาฬิกาจำลอง · บันทึกเป็นข้อมูลทดสอบ" : "เวลาจริง · บันทึกเป็นข้อมูลจริง";
+  document.querySelectorAll("[data-lc-mode]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.lcMode === LC.mode)));
+  document.querySelectorAll("[data-lc-speed]").forEach((b) => b.setAttribute("aria-pressed", String(sim && +b.dataset.lcSpeed === LC.speed)));
+  $("lc-pause").textContent = LC.paused ? "▶ เดินต่อ" : "❚❚ หยุดเวลา";
+  $("lc-pause").setAttribute("aria-pressed", String(!!LC.paused));
+  $("lc-note").textContent = sim
+    ? "ทดสอบ: ไลน์จำลองบน server เดินตามนาฬิกานี้ บันทึกเป็น source = test ที่เวลาจำลอง (แยกจากข้อมูลจริง) · ข้อมูลจริงหยุดบันทึกจนกว่าจะกลับเป็นเวลาจริง"
+    : "เวลาจริง: ข้อมูลจริงมาจากบอร์ดเท่านั้น (บอร์ดหลุด = ไม่ได้บันทึก พร้อมสาเหตุ) · ตัวจำลองตามเวลาจริงไม่ถูกบันทึก";
+  if (sim && S && S.src === "board") $("lc-note").textContent = "บอร์ดยังต่ออยู่: กด Disconnect board ก่อน แล้วไลน์ทดสอบจะเดินตามนาฬิกานี้";
+  const box = $("lc-at");
+  if (document.activeElement !== box) box.value = iso.slice(0, 16);
+}
+function followClockState(m) {
+  if (!m.clock || (m.clock.mode !== "real" && m.clock.mode !== "sim")) return;
+  if (m.clock.mode !== LC.mode) event(m.clock.mode === "sim" ? "line clock: simulated (test data)" : "line clock: real time", "n");
+  LC = { ...m.clock };
+  if (typeof m.ms === "number") lcSkew = m.ms - Date.now();
+  drawClock();
+}
+const clockCmd = (m, note) => { command({ cmd: "clock", ...m }); if (note) event(note, "n"); };
+document.querySelectorAll("[data-lc-mode]").forEach((b) => b.addEventListener("click", () => {
+  if (b.dataset.lcMode === LC.mode) return;
+  clockCmd({ mode: b.dataset.lcMode, ...(b.dataset.lcMode === "sim" && { speed: 1 }) }, b.dataset.lcMode === "sim" ? "simulated clock on" : "back to real time");
+}));
+document.querySelectorAll("[data-lc-speed]").forEach((b) => b.addEventListener("click", () => clockCmd({ mode: "sim", speed: +b.dataset.lcSpeed }, `clock ${b.dataset.lcSpeed}×`)));
+$("lc-pause").addEventListener("click", () => clockCmd({ mode: "sim", paused: LC.paused ? 0 : 1 }, LC.paused ? "clock running" : "clock paused"));
+$("lc-go").addEventListener("click", () => {
+  const v = $("lc-at").value;                                   // YYYY-MM-DDTHH:MM, Thailand time
+  if (v) clockCmd({ mode: "sim", at: Date.parse(v + ":00Z") - TH }, "clock → " + v.replace("T", " "));
+});
+document.querySelectorAll("[data-lc-jump]").forEach((b) => b.addEventListener("click", () => {
+  // the shift the clock is in (or the next one), from the day before to the day after: shifts may run past midnight
+  const t = lcNow(), d0 = thMidnight(t), sh = ctl.shift, span = shiftSpan(sh), into = ((toMinOf(sh.bstart) - toMinOf(sh.start)) % 1440 + 1440) % 1440;
+  const all = [-1, 0, 1].flatMap((d) => shiftList(sh).map(([a]) => d0 + (d * 1440 + a) * MINUTE)).sort((x, y) => x - y);
+  const cur = [...all].reverse().find((a) => a <= t && t < a + span * MINUTE) ?? all.find((a) => a > t), next = all.find((a) => a > t);
+  const at = { start: cur, break: cur + (into - 5) * MINUTE, end: cur + (span - 5) * MINUTE, hour: t + 60 * MINUTE, next }[b.dataset.lcJump];
+  clockCmd({ mode: "sim", at }, "clock → " + b.textContent);
+}));
+setInterval(drawClock, 500);
+drawClock();
 // reset clears the dashboard's line counters, so it asks twice
 $("sim-reset").addEventListener("click", (e) => {
   const b = e.currentTarget;
@@ -833,7 +923,7 @@ let boardStatus = "";
 // monitor = the board is connected here (seen sending, and "Connect board" chosen) · control = this page is the board
 const boardSeen = () => (S ? !!S.board : false) || (lastBoard && performance.now() - lastBoard < BOARD_QUIET_MS);
 // the hub decides (src): monitor = the dashboards follow the board · control = they follow the control pages
-const mode = () => (!client || !client.connected || !S ? "off" : S.src === "board" ? "monitor" : "control");
+const mode = () => (!client || !client.connected || !S ? "off" : S.src === "board" ? "monitor" : S.src === "none" ? "wait" : "control");
 function setMode() {
   const m = mode(), seen = boardSeen();
   const b = $("use-board");
@@ -844,15 +934,16 @@ function setMode() {
   b.title = !ctl.useBoard && !seen ? "ยังไม่เจอบอร์ด: เปิดบอร์ดและต่อ Wi-Fi ก่อน" : "";
   $("mode-s").textContent = m === "off" ? (client && client.connected ? "รอค่าจาก server (control-hub) …" : "ใส่รหัส MQTT_WEB_PASS ด้านบนครั้งเดียว (เบราว์เซอร์จำไว้) แล้วปุ่มด้านล่างจะคุมหน้า OEE")
     : m === "monitor" ? "หน้า OEE ใช้ข้อมูลจากบอร์ด · หน้านี้ดูสัญญาณอย่างเดียว"
+    : m === "wait" ? `ไลน์จริงรอบอร์ด: ${S.board_wait || "ยังไม่มีข้อมูลจากบอร์ด"} · ช่วงนี้บันทึกเป็น "ไม่ได้บันทึก" · กด Disconnect board ถ้าจะเล่นตัวจำลอง (ไม่ใช่ข้อมูลจริง)`
     : seen ? "บอร์ดออนไลน์อยู่ แต่หน้า OEE ใช้ตัวจำลองจากหน้านี้ · กด Connect board เพื่อใช้บอร์ด"
     : ctl.useBoard ? "ไม่เจอบอร์ด: หน้านี้เป็นบอร์ดจำลอง หน้า OEE ทำตามปุ่มด้านล่าง · เจอบอร์ดเมื่อไรจะใช้บอร์ดเอง" : "หน้านี้เป็นบอร์ดจำลอง หน้า OEE ทำตามปุ่มด้านล่าง";
-  if (document.body.dataset.mode === m) return;
+  if (document.body.dataset.mode === m) return;   // (the wait reason above still refreshes every state)
   const was = document.body.dataset.mode;
   document.body.dataset.mode = m;
   $("mode").dataset.m = m;
-  $("mode-t").textContent = { off: "NOT LOGGED IN", monitor: "VIA BOARD · BOARD CONNECTED", control: "SIMULATOR · CONTROL VIA WEBSITE" }[m];
+  $("mode-t").textContent = { off: "NOT LOGGED IN", monitor: "VIA BOARD · BOARD CONNECTED", wait: "WAITING FOR BOARD · NOT RECORDED", control: "SIMULATOR · CONTROL VIA WEBSITE" }[m];
   if (m !== "monitor") { $("route").textContent = ""; prev = null; renderCtl(); }
-  if (was && was !== "off") event(m === "monitor" ? "board connected · the dashboards follow the board" : m === "control" ? "simulator · the dashboards follow this page" : "logged out", "n");
+  if (was && was !== "off") event(m === "monitor" ? "board connected · the dashboards follow the board" : m === "wait" ? "waiting for the board · not recorded" : m === "control" ? "simulator · the dashboards follow this page" : "logged out", m === "wait" ? "r" : "n");
 }
 $("use-board").addEventListener("click", () => { ctl.useBoard = ctl.useBoard ? 0 : 1; sendCtl(ctl.useBoard ? "connect board" : "disconnect board · simulator", "n"); setMode(); });
 

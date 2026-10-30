@@ -1,5 +1,14 @@
 # Smart Factory OEE — Group 3
 
+> [!IMPORTANT]
+> ## 🔐 วิธี login เข้าเว็บ
+>
+> 1. เปิดเว็บด้านล่าง จะเจอหน้า login ของ Cloudflare
+> 2. ใส่ **Gmail ที่ได้จาก LEB2**: เข้า **LEB2 → EEE 402 Smart Factory → Member → Email** ใช้ email ที่อยู่ในนั้น
+> 3. รอรับ **รหัส PIN 6 หลัก** ทาง email นั้น แล้วกรอกรหัสเพื่อ login
+>
+> ⚠️ **ถ้าเปิดเว็บแล้วไม่ขึ้นหน้า login หรือขึ้น error** น่าจะเป็นเพราะตอนนี้คอมพิวเตอร์ที่เป็น server ไม่ได้เปิดอยู่ (ไม่ใช่ปัญหาที่เครื่องของคุณ)
+
 > **ถ้าเพื่อนอยากลองเล่น เข้า website พวกนี้ได้เลย**
 >
 > - **OEE dashboard:** https://oee.rdeewv.click
@@ -7,8 +16,6 @@
 > - **Grafana:** https://grafana.rdeewv.click
 > - **SQL (ดู database · อ่านอย่างเดียว):** https://sql.rdeewv.click
 > - **Google Sheet:** https://docs.google.com/spreadsheets/d/1ZiESObAtN6erJ4NQateA69M3uQN6uk8AtL6M_rZyW1g/edit?usp=sharing
->
-> เข้าครั้งแรกจะมีหน้า login ของ Cloudflare ให้ใส่ email (ใช้ email ที่ได้จาก LEB2) แล้วกรอกรหัสที่ส่งไปทาง email
 
 ระบบวัด OEE ของไลน์ผลิตจำลอง 4 เครื่อง บอร์ด ESP32 ส่งสัญญาณผ่าน MQTT ไปที่เครื่อง server ซึ่งเก็บข้อมูลลง database แสดงผลบนหน้าเว็บกับ Grafana และส่งสรุปขึ้น Google Sheet ถ้าไม่มีบอร์ด หน้า **control** จะเป็นบอร์ดจำลองแทน
 
@@ -43,6 +50,7 @@ flowchart LR
         web["nginx<br/>หน้าเว็บ · /mqtt · /mqtt-view · /pair"]
         bk["backup<br/>สำรอง database ทุกวัน"]
         pw["pgweb<br/>ดู database ในเว็บ"]
+        api["oee-api<br/>OEE จาก database"]
     end
 
     ctl["หน้า control<br/>(กี่เครื่องก็ได้)"]
@@ -59,6 +67,7 @@ flowchart LR
     pg -. "อ่านอย่างเดียว" .-> claude
     pg --> bk
     pg -. "อ่านอย่างเดียว" .-> pw
+    pg -. "อ่านอย่างเดียว" .-> api --> web
     ctl -- "คำสั่ง (control/set)" --> mq
     mq <--> hub
     mq -- "ค่าจริง + ข้อมูลบอร์ด" --> ctl
@@ -72,6 +81,11 @@ flowchart LR
 - **บอร์ด** อ่านปุ่ม / สวิตช์ ผลิตชิ้นงานเองตาม cycle แล้วส่ง 3 topic: `board` (สถานะสด ~1 ครั้ง/วินาที), `events` (กดปุ่ม / ผลิตเสร็จ), `minutes` (สรุปทุก 1 นาที)
 - **Telegraf** เขียนทุกข้อความลง **PostgreSQL** (ที่เก็บหลัก) และ **InfluxDB** (ให้ Grafana)
 - **control-hub** ถือค่าควบคุมจริงไว้ที่ server ที่เดียว หน้า control ทุกเครื่องเห็นค่าเดียวกัน หน้า OEE ทุกจอทำตาม และบันทึกการกดบนเว็บลง database เป็น `source = website`
+- **ไลน์จริง = บอร์ดเท่านั้น:** ข้อมูลจริงใน database มาจากบอร์ด (`source = board`) ถ้าหน้า control เลือก *Connect board* แต่บอร์ดไม่ส่งข้อมูล ไลน์จะหยุด (ไม่ใช้ตัวจำลองแทน) ทุกหน้าขึ้น **Not recorded · สาเหตุ** (บอร์ดออฟไลน์ / บอร์ดไม่ส่งข้อมูล / ยังไม่เคยต่อบอร์ด / หน้าเว็บขาดการเชื่อมต่อ server) และแผง OEE บันทึกช่วงนั้นเป็น "ไม่ได้บันทึก" พร้อมสาเหตุ · ใน database ดูได้ที่ `not_recorded(since)` และในแท็บ OEE Dashboard → จาก database → ช่วงที่ไม่ได้บันทึก · ตัวจำลองตามเวลาจริง (*Disconnect board*) ใช้เล่น / สาธิต ไม่ถูกบันทึก
+- **นาฬิกาของไลน์ (การ์ดบนหน้า control):** ทุกจอใช้นาฬิกาเดียว (control-hub)
+  - **เวลาจริง:** สำหรับเก็บข้อมูลจริง
+  - **นาฬิกาจำลอง:** สำหรับ test case: ตั้งเวลาได้ (ทางลัด: ต้นกะ, 5 นาทีก่อนพัก, 5 นาทีก่อนจบกะ, +1 ชม., ต้นกะวันถัดไป), เร่ง 1× / 10× / 60× (1 วินาที = 1 นาที), หยุดเวลาได้ · ระหว่างนั้นไลน์จำลองบน server เดินตามนาฬิกานี้ในเวลากะ และบันทึกเป็น `source = test` ที่เวลาจำลอง แยกจากข้อมูลจริง (ข้อมูลจริงหยุดบันทึกจนกลับเป็นเวลาจริง) · ต้องกด *Disconnect board* ก่อนถ้าบอร์ดต่ออยู่
+  - ลบข้อมูลทดสอบ: `docker compose exec timescaledb psql -U factory_admin -d factory -c "DELETE FROM minutes WHERE source='test'" -c "DELETE FROM events WHERE source='test'"`
 - **sheets-sync** ส่งสรุป OEE และ Events ขึ้น Google Sheet
 - **หน้า OEE** รับข้อมูลผ่าน MQTT ช่องอ่านอย่างเดียว (`/mqtt-view`) จึงไม่ต้องใส่รหัส และส่งคำสั่งไม่ได้
 - **backup** สำรอง database เป็นไฟล์ทุกวัน · **pgweb** เปิดดูตาราง / รัน SELECT ในเว็บ (อ่านอย่างเดียว เปิดได้เฉพาะบนเครื่อง server)
@@ -88,7 +102,8 @@ flowchart LR
 │   │   ├── docker-compose.yml
 │   │   ├── .env.example         ← แม่แบบรหัสผ่าน (copy เป็น .env)
 │   │   ├── mosquitto/           ← config + สิทธิ์ (acl, acl_view)
-│   │   ├── control-hub/         ← ค่าควบคุมจริง + รหัสจับคู่ 5 ตัว
+│   │   ├── control-hub/         ← ค่าควบคุมจริง + รหัสจับคู่ 5 ตัว + ไลน์จำลองบน server
+│   │   ├── oee-api/             ← OEE จาก database ให้แท็บ OEE Dashboard (อ่านอย่างเดียว)
 │   │   ├── nginx/               ← เว็บ + ส่งต่อ /mqtt, /mqtt-view, /pair
 │   │   ├── postgres/            ← ตาราง, view OEE
 │   │   ├── telegraf/            ← MQTT → database + watchdog.sh
@@ -140,7 +155,7 @@ cp .env.example .env          # Windows PowerShell: copy .env.example .env
 ### 1.3 เปิดระบบ
 ```bash
 docker compose up -d --build      # ครั้งแรกโหลด image ราว 1–2 GB
-docker compose ps                 # ต้องขึ้นครบ 10 ตัว: mosquitto web timescaledb influxdb telegraf grafana sheets-sync control-hub backup pgweb
+docker compose ps                 # ต้องขึ้นครบ 11 ตัว: mosquitto web timescaledb influxdb telegraf grafana sheets-sync control-hub backup pgweb oee-api
 ```
 
 ### 1.4 หา IP ของเครื่อง server
@@ -173,6 +188,7 @@ Windows `ipconfig` · Mac `ipconfig getifaddr en0` · Linux `hostname -I` แล
   - `Live · via board` = ไลน์ทำตามบอร์ดจริง
   - `Live · control via website` = ไลน์ทำตามตัวจำลองของหน้า control
 - แท็บ **Line** (ภาพ 3D ไลน์ผลิต) กับ **OEE Dashboard** (กราฟ / ตาราง OEE แต่ละเครื่อง) สลับได้ด้วยปุ่มบนหัวเว็บหรือกด `1` / `2`
+- **OEE Dashboard → ส่วน "จาก database":** OEE ของวันนี้จาก database (OEE / A / P / Q / output ทั้งไลน์, OEE 14 วันล่าสุด, ชิ้นงานต่อชั่วโมง, แต่ละเครื่อง, แต่ละ product) เลือกได้ว่าของ **บอร์ด** หรือ **ไลน์จำลอง** (ค่าเริ่มต้นตามที่ไลน์ใช้อยู่) ดึงจาก `/api/db` (service `oee-api`, คำสั่ง SELECT ที่กำหนดไว้เท่านั้น ล็อกอินเป็น `reader`) อัปเดตทุก 1 นาที · OEE ทั้งไลน์คิดแบบเดียวกับรายงานประจำวัน (P ไม่เกิน 100 %) · ส่วนบนของแท็บยังเป็นตัวเลขสดที่หน้าเว็บคำนวณเอง
 - **แบบ minimal:** แถบไลน์ (กำลังผลิต · ผลผลิต · throughput · bottleneck) · ภาพ 3D กับป้ายเครื่อง (ความเร็ว · cycle · OEE) · แผงขวา (กะ / time frame 1 บรรทัด · timeline · เวลาเดิน / หยุด · A · P · Q · OEE · ดี / เสียแยกตาม product) · การตั้งค่าทั้งหมดอยู่หน้า control ส่วนรายละเอียดอยู่แท็บ OEE Dashboard
 - **กราฟกะ → ปุ่ม ⤢ ขยาย:** กราฟใหญ่ที่ลากเส้นจากทุกช่วงหยุด (สีแดง) ไปที่ป้าย *เวลา · นานเท่าไร · สาเหตุ* (ALARM, เครื่องไหนปิดสวิตช์ run / เปิดฝา / ความเร็ว 0% / ซ่อมบำรุง, ไลน์จำลองหยุด) + สรุปเวลาหยุดตามสาเหตุ (มากไปน้อย) + ตารางทุกช่วงที่หยุด · ไลน์นับว่าเดินเมื่อทุกเครื่องในเส้นทางผลิตเดิน
 - **Links** (ใต้แผง OEE และบนหัวหน้า control): Google Sheet · Control · Grafana · SQL (`sql.<domain>`) · Wiring map · หน้าเว็บในบอร์ด · GitHub · ลิงก์ของคุณเองใส่ใน `server/.env` → `LINKS=Google Sheet|https://…;ชื่ออื่น|https://…` (ไม่ขึ้น GitHub เพราะ repo เป็น public)
@@ -207,6 +223,7 @@ Windows `ipconfig` · Mac `ipconfig getifaddr en0` · Linux `hostname -I` แล
 - GOOD / REJECT / Undo / Reset นับทุกครั้ง · **ยอด GOOD / REJECT มีที่ control-hub ที่เดียว** หน้า control และหน้า OEE ทุกจอแสดงเลขเดียวกัน (เปิดหน้า OEE ทีหลังก็ได้ยอดเต็ม) · **Undo** เอา GOOD / REJECT ครั้งล่าสุดออก · **Reset** ตั้งยอดกลับเป็น 0 ทุกหน้า
 
 ### 4.4 Shift & time frame (ของแผง OEE ทุกจอ)
+- **กะ:** จำนวนกะ 1–3 ต่อกันไป แต่ละกะยาว *ชั่วโมงทำงาน + พัก* และพักที่ตำแหน่งเดียวกันในกะ (กะข้ามเที่ยงคืนได้) · ตอนนี้ตั้ง **2 กะ × 12 ชม. = 24 ชม.**: กะ 1 08:00–20:00 (พัก 12:00–13:00), กะ 2 20:00–08:00 (พัก 00:00–01:00) · แผง OEE ใช้กะที่เวลาอยู่ตอนนั้น (time frame "ทั้งกะ") · ข้อมูลจริงจากบอร์ดบันทึกตลอดที่บอร์ดเปิด ไม่ขึ้นกับกะ · OEE รายกะใน database: `oee('12 hours', bucket_offset => '8 hours')`
 - เวลาเริ่มกะ, ชั่วโมงทำงาน, เวลาพัก, ideal cycle, นาฬิกา (เวลาจริง / demo 1 วินาที = 1 นาที) และ time frame (15 นาที / 1 ชม. / 4 ชม. / ทั้งกะ / Custom) · ตั้งที่การ์ดนี้แล้วหน้า OEE ทุกจอเปลี่ยนตาม (เก็บที่ control-hub)
 - **Clear OEE record** (กด 2 ครั้ง) ล้างบันทึกของแผง OEE ทุกจอ
 
@@ -244,8 +261,8 @@ database ──► sheets-sync (บน server) ──HTTPS + SHEETS_KEY──►
 | แท็บ | ข้อมูล | อัปเดต |
 |---|---|---|
 | **Events** | กดปุ่ม / สวิตช์ / ผลิตเสร็จ ล่าสุด · คอลัมน์ท้าย `source` = `board` หรือ `website` | ~10 วินาทีหลังมี event |
-| **OEE_Daily** / **OEE_Hourly** | OEE แต่ละเครื่อง (และ product) รายวัน / รายชั่วโมง | ทุก 15 นาที |
-| **Products** | output / good / reject / quality ของแต่ละ product รายวัน | ทุก 15 นาที |
+| **OEE_Daily** / **OEE_Hourly** | OEE แต่ละเครื่อง (และ product) รายวัน / รายชั่วโมง · คอลัมน์ `source` = `board` หรือ `sim` (ไลน์จำลอง) | ทุก 15 นาที |
+| **Products** | output / good / reject / quality ของแต่ละ product รายวัน (แยก `source`) | ทุก 15 นาที |
 | **Daily_Report** | สรุปประจำวันสำหรับผู้บริหาร (ดูด้านล่าง) | ทุก 15 นาที + ตอน `REPORT_AT` |
 | **Machines** · **Notes** | ชื่อเครื่อง + `ideal_cycle_s` · คำอธิบายแต่ละแท็บ | ทุก 15 นาที |
 
@@ -331,6 +348,8 @@ docker compose exec timescaledb psql -U factory_admin -d factory -c "SELECT max(
 ถ้า `esp32/` เปลี่ยน ให้อัปโหลดโค้ดบอร์ดใหม่ · ถ้า `google-sheets/` เปลี่ยน ให้อัปเดต Apps Script
 
 **สำรองข้อมูลอัตโนมัติ:** service `backup` ทำ `server/backups/factory-YYYY-MM-DD.dump` ทุกวัน (ตอนเปิดและทุก 24 ชั่วโมง) เก็บย้อนหลัง `BACKUP_KEEP_DAYS` วัน (ค่าเริ่มต้น 14) · **คัดลอกโฟลเดอร์นี้และไฟล์ `.env` ไปเก็บนอกเครื่องเป็นระยะ** (ไม่อยู่ใน GitHub) · สำรองเองทันที: `docker compose exec -T timescaledb pg_dump -U factory_admin -Fc factory > factory.dump` · restore บนเครื่องใหม่: ดู [`OEE-System/README.md`](OEE-System/README.md#สำรอง--restore-database) · ถ้าสำรองไม่สำเร็จ (เช่น database ยังเปิดไม่เสร็จหลังรีบูต) จะลองใหม่ทุก 5 นาที · ดู: `docker compose logs backup`
+
+**ขนาด database:** ตาราง events / minutes ถูกบีบอัดเองเมื่อเก่ากว่า 7 วัน (TimescaleDB, ราว 10 เท่า) · `board` บีบอัดหลัง 7 วันและลบหลัง 365 วัน · dashboard (`oee-api`) อ่านแค่ 14 วันล่าสุด และแท็บรายวันใน Google Sheet / รายงานอ่านย้อนหลัง `SHEETS_DAYS` วัน (ค่าเริ่มต้น 120) ด้วย `oee(…, since)` / `products(since)` จึงไม่ช้าลงเมื่อข้อมูลสะสม
 
 **ตัวเฝ้าระวัง Telegraf:** `telegraf/watchdog.sh` รีสตาร์ต Telegraf เองเมื่อบอร์ดออนไลน์แต่ข้อมูลไม่เข้าเกิน `WATCHDOG_STALL_S` วินาที (ค่าเริ่มต้น 180) · ดู: `docker compose logs telegraf | grep watchdog`
 
