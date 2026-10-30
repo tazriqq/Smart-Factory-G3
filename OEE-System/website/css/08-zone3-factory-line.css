@@ -501,3 +501,7 @@ body.phone .lb-now{display:flex;width:100%;margin-top:4px}
 /* the dashboard sits under the header bar (15-zone3-factory-line.js placeDash): the tabs stay in the header */
 body.od-open .lf-tabs,body.od-open .dash-bar .lf-tabs{position:relative;top:auto;left:auto;transform:none}
 body .od{padding-top:20px}
+/* the tabs in the middle of the header bar, on the line and on the OEE dashboard alike */
+/* (when there is room: 15-zone3-factory-line.js centreTabs adds tabs-center only if nothing is covered) */
+.dash-bar.tabs-center{position:relative}
+body .dash-bar.tabs-center .lf-tabs,body.od-open .dash-bar.tabs-center .lf-tabs{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%)}

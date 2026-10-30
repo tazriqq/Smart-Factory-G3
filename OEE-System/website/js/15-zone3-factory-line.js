@@ -956,6 +956,18 @@ function placeDash() {
   od.style.top = (bar && getComputedStyle(bar).display !== 'none' ? Math.max(0, bar.getBoundingClientRect().bottom) : 0) + 'px';
 }
 addEventListener('resize', placeDash);
+// the tabs in the middle of the header bar when that covers nothing there; otherwise where they are in the bar
+function centreTabs() {
+  const bar = document.querySelector('.dash-bar');
+  if (!bar || !bar.contains(tabs)) return;
+  bar.classList.add('tabs-center');
+  const t = tabs.getBoundingClientRect();
+  const hit = [...bar.children].some((e) => e !== tabs && e.offsetParent && (() => { const r = e.getBoundingClientRect(); return r.right > t.left - 8 && r.left < t.right + 8 && r.bottom > t.top && r.top < t.bottom; })());
+  if (hit) bar.classList.remove('tabs-center');
+  placeDash();
+}
+addEventListener('resize', centreTabs);
+setTimeout(centreTabs, 0); setTimeout(centreTabs, 1500);   // again once the line name and the status pill are in
 addEventListener('scroll', placeDash, { passive: true });
 function showTab(name) {
   tabs.querySelectorAll('[data-tab]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === name)));
