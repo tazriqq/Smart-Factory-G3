@@ -170,6 +170,9 @@ function drawAndon(m) {
     },
   };
 }
+// DOWN / SET-UP / MAINTENANCE: a label over the drawing (not on the floor, where the machine would cover it),
+// at the front corner of the machine's floor pad
+const padTags = [];
 const slots = MACHINES.map((m, i) => {
   const slot = floor.querySelector(`[data-slot="${m.id}"]`);
   slot.style.left = m.x + 'px'; slot.style.top = m.y + 'px'; slot.style.width = m.w + 'px';
@@ -210,7 +213,11 @@ const slots = MACHINES.map((m, i) => {
     });
   };
   padLabel(false);
-  return { m, slot, tag, pad, padLabel, door, andon, doorBtn: tag.querySelector('.tg-door'), setup: false, dot: tag.querySelector('i'), bar: tag.querySelector('.tg-bar span'), n: tag.querySelector('.tg-n'), pr: tag.querySelector('.tg-pr'), spd: tag.querySelector('.spd'), oee: tag.querySelector('.tg-oee strong'), apq: tag.querySelector('.tg-apq'), ct: tag.querySelector('.tg-ct b'), ctx: tag.querySelector('.tg-ctx') };
+  const padTag = document.createElement('div');
+  padTag.className = 'lf-padtag'; padTag.hidden = true;
+  tagsBox.appendChild(padTag);
+  padTags.push({ node: padTag, at: S(m.u + m.ru + FRONT * 0.8, m.v + m.rv + FRONT * 0.8) });
+  return { m, slot, tag, pad, padLabel, padTag, door, andon, doorBtn: tag.querySelector('.tg-door'), setup: false, dot: tag.querySelector('i'), bar: tag.querySelector('.tg-bar span'), n: tag.querySelector('.tg-n'), pr: tag.querySelector('.tg-pr'), spd: tag.querySelector('.spd'), oee: tag.querySelector('.tg-oee strong'), apq: tag.querySelector('.tg-apq'), ct: tag.querySelector('.tg-ct b'), ctx: tag.querySelector('.tg-ctx') };
 });
 const outs = [];      // one output panel + piles per product
 // the line's name wherever the page shows it
@@ -225,6 +232,7 @@ function placeTags() {
   const put = (node, [x, y]) => { node.style.left = (cam.x + x * cam.k) + 'px'; node.style.top = (cam.y + y * cam.k) + 'px'; };
   slots.forEach((s) => put(s.tag, s.m.tag));
   badges.forEach((b) => put(b.node, b.at));
+  padTags.forEach((b) => put(b.node, b.at));
 }
 
 if (location.hash === '#debug') MACHINES.forEach((m) => { const [x, y] = S(m.u, m.v); el('circle', { cx: x, cy: y, r: 10, fill: 'red' }, ground); });
@@ -682,6 +690,8 @@ function render() {
     s.pad.classList.toggle('setup', !!plan);
     if (s.setup !== plan) s.padLabel((s.setup = plan));
     if (plan || open) s.dot.className = 'setup';
+    const word = plan === 'maint' ? 'MAINTENANCE' : plan ? 'SET-UP' : sp === 0 && !open ? 'DOWN' : '';
+    if (s.padTag.textContent !== word) { s.padTag.textContent = word; s.padTag.hidden = !word; s.padTag.dataset.k = plan || 'down'; }
     const bd = BOARD(), bl = bd && (bd.live ? bd : bd.local);
     s.andon.set(plan || open ? 'amber' : sp === 0 ? 'red' : x.mode === 'run' ? 'green' : 'amber', sp === 0 && !!bl?.al);
     s.dot.title = sp === 0 ? stopWhy(i) : { run: 'running', starved: 'waiting for a part', blocked: 'waiting for room on the belt' }[x.mode];
@@ -938,9 +948,23 @@ function drawChart() {
 }
 csvg.addEventListener('pointermove', (e) => { const r = csvg.getBoundingClientRect(); hoverX = e.clientX - r.left; drawChart(); });
 csvg.addEventListener('pointerleave', () => { hoverX = null; drawChart(); });
+// the tabs stay exactly where they are when the dashboard opens over the page: a spot of the same size holds
+// their place in the header, and they are pinned over it
+const tabSpot = document.createElement('span');
+tabSpot.className = 'lf-tabs-spot'; tabSpot.hidden = true;
+tabs.before(tabSpot);
+function pinTabs() {
+  if (od.hidden) { tabs.style.cssText = ''; tabSpot.hidden = true; return; }
+  if (tabSpot.hidden) { const r = tabs.getBoundingClientRect(); tabSpot.style.width = r.width + 'px'; tabSpot.style.height = r.height + 'px'; tabSpot.hidden = false; }
+  const p = tabSpot.getBoundingClientRect();
+  Object.assign(tabs.style, { position: 'fixed', left: p.left + 'px', top: p.top + 'px', transform: 'none', margin: '0' });
+}
+addEventListener('resize', pinTabs);
 function showTab(name) {
   tabs.querySelectorAll('[data-tab]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === name)));
+  if (name === 'oee' && od.hidden) { od.hidden = false; pinTabs(); }   // measure before the tabs leave the header
   od.hidden = name !== 'oee';
+  pinTabs();
   document.body.classList.toggle('od-open', !od.hidden);
   if (!od.hidden) renderDash();
   try { localStorage.setItem('lf-tab', name); } catch {}

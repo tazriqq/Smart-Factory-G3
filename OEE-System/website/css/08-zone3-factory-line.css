@@ -490,3 +490,11 @@ body.phone .lb-now{display:flex;width:100%;margin-top:4px}
 .oee-links small{color:var(--anatomy-muted);font-size:9.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dash-oee>.oee{display:flex;flex-direction:column}
 .dash-oee>.oee{padding-bottom:46px}   /* room for the full-screen button under the links */
+/* DOWN / SET-UP / MAINTENANCE as a label above everything (the floor pad keeps its colour, without the word) */
+.gr-stop text{display:none}
+.lf-padtag{position:absolute;transform:translate(-50%,-50%);padding:4px 12px;font:800 13px var(--anatomy-mono);letter-spacing:.1em;color:#fff;background:#e5484d;box-shadow:0 2px 8px rgba(0,0,0,.25);pointer-events:none;white-space:nowrap}
+.lf-padtag[data-k="setup"],.lf-padtag[data-k="maint"]{background:#f5c518;color:#3b3000}
+.lf-padtag[hidden]{display:none}
+.lf-padtag{z-index:40}   /* above the machine tags too */
+.lf-tabs-spot{display:inline-block;flex:none}
+.lf-tabs-spot[hidden]{display:none}
