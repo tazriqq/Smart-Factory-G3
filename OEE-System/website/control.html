@@ -174,7 +174,15 @@ input[type=range]{width:100%;margin:6px 0;accent-color:var(--strong)}
 .qcp-row .n{font:12px var(--mono);color:var(--muted);white-space:nowrap}
 .qcp-row .n b{font-size:16px;color:var(--strong)}.qcp-row .n .g{color:var(--green)}.qcp-row .n .r{color:var(--red)}
 .qcp-row .btn.qg{color:var(--green);padding:10px 16px}.qcp-row .btn.qr{color:var(--red);padding:10px 16px}
-@media (max-width:620px){.qcp-row .btn.qg,.qcp-row .btn.qr{flex:1}}
+/* how many parts one GOOD / REJECT press counts: empty = 1; on a phone it opens the number keypad */
+.qcp-row .qn{width:76px;padding:9px 10px;border:0;border-radius:7px;background:var(--card);color:var(--strong);font:600 16px var(--mono);text-align:center;box-shadow:inset 0 0 0 1px var(--line)}
+.qcp-row .qn:focus{outline:2px solid var(--strong);outline-offset:1px}
+.qcp-row .qn::placeholder{color:var(--muted);font-weight:400}
+@media (max-width:620px){
+  .qcp-row .n{flex-basis:100%}   /* the counts on their own line, then [number] [GOOD] [REJECT] in one row */
+  .qcp-row .btn.qg,.qcp-row .btn.qr{flex:1 1 0;min-width:0;padding:11px 6px;white-space:nowrap}
+  .qcp-row .qn{flex:none;width:64px}
+}
 
 /* logs */
 .logs{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px}
@@ -579,7 +587,7 @@ function sendCtl(note, cls) {
   }, 80);
 }
 // QC good / reject, undo, reset: counted on the hub, never in conflict
-function press(key) { const k = key.split(".")[0]; if (typeof ctl[k] === "number") ctl[k]++; command({ cmd: "press", key }); }
+function press(key, n = 1) { const k = key.split(".")[0]; if (typeof ctl[k] === "number") ctl[k] += n; command(n > 1 ? { cmd: "press", key, n } : { cmd: "press", key }); }
 // a change made on another device: the same line in this page's Events
 function logOther(a, b) {
   const from = " · from another device";
@@ -699,7 +707,9 @@ let shownLinks = "";
 const DASH_URL = $("dash").href;   // set above: oee.<domain>, or the server's own page
 function showLinks(extra) {
   const grafana = /^control\./.test(location.hostname) ? `${location.protocol}//${location.hostname.replace(/^control\./, "grafana.")}/` : `${location.protocol}//${location.hostname || "192.168.1.107"}:3000/`;
-  const all = [{ name: "OEE dashboard", url: DASH_URL }, ...(extra || []), { name: "Grafana", url: grafana }, { name: "Wiring map", url: "wiring-map.html" }];
+  // pgweb: sql.<domain> from outside, or on the server itself only (it listens on 127.0.0.1)
+  const sql = /^control\./.test(location.hostname) ? `${location.protocol}//${location.hostname.replace(/^control\./, "sql.")}/` : /^(localhost|127\.0\.0\.1)$/.test(location.hostname) ? "http://127.0.0.1:8081/" : null;
+  const all = [{ name: "OEE dashboard", url: DASH_URL }, ...(extra || []), { name: "Grafana", url: grafana }, ...(sql ? [{ name: "SQL", url: sql }] : []), { name: "Wiring map", url: "wiring-map.html" }];
   const html = all.map((l) => `<a href="${String(l.url).replace(/"/g, "&quot;")}" target="_blank" rel="noopener">${String(l.name).replace(/</g, "&lt;")} ↗</a>`).join("");
   if (html !== shownLinks) { $("links").innerHTML = shownLinks = html; }
 }
@@ -709,11 +719,23 @@ showLinks([]);
 $("qcp-rows").innerHTML = ["A", "B"].map((P) => `<div class="qcp-row" data-p="${P}">
   <span class="who"><i class="rp${P === "B" ? " b" : ""}">${P}</i><b data-q="name"></b><em data-q="route"></em></span>
   <span class="n">good <b class="g" data-q="good">0</b> · scrap <b class="r" data-q="rej">0</b> · yield <span data-q="yield">—</span></span>
+  <input class="qn" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="3" autocomplete="off" enterkeyhint="done" placeholder="1" aria-label="จำนวนชิ้น product ${P}">
   <button class="btn ctl qg" type="button">✓ GOOD</button><button class="btn ctl qr" type="button">✕ REJECT</button></div>`).join("");
 document.querySelectorAll(".qcp-row").forEach((row) => {
-  const P = row.dataset.p;
-  row.querySelector(".qg").addEventListener("click", () => { press("good." + P); ctl.qc[P].good++; renderQcp(); sendCtl(`QC good · product ${P}`, "g"); });
-  row.querySelector(".qr").addEventListener("click", () => { press("rej." + P); ctl.qc[P].rej++; renderQcp(); sendCtl(`QC reject · product ${P}`, "r"); });
+  const P = row.dataset.p, box = row.querySelector(".qn"), qg = row.querySelector(".qg"), qr = row.querySelector(".qr");
+  // the number box: digits only, 1-999; the buttons say how many they will count
+  const count = () => Math.max(1, Math.min(999, parseInt(box.value, 10) || 1));
+  const label = () => { const n = box.value ? count() : 1; qg.textContent = "✓ GOOD" + (n > 1 ? " ×" + n : ""); qr.textContent = "✕ REJECT" + (n > 1 ? " ×" + n : ""); };
+  box.addEventListener("input", () => { const v = box.value.replace(/\D/g, "").replace(/^0+/, "").slice(0, 3); if (v !== box.value) box.value = v; label(); });
+  box.addEventListener("keydown", (e) => { if (e.key === "Enter") box.blur(); });   // the keypad's done: put it away
+  const qc = (k) => {
+    const n = count(), what = k === "good" ? "good" : "reject";
+    press(k + "." + P, n); ctl.qc[P][k] += n; renderQcp();
+    sendCtl(`QC ${what}${n > 1 ? " ×" + n : ""} · product ${P}`, k === "good" ? "g" : "r");
+    box.value = ""; label();
+  };
+  qg.addEventListener("click", () => qc("good"));
+  qr.addEventListener("click", () => qc("rej"));
 });
 // counts: the hub's (simulator) or the board's own split (monitor: qg / qr since its power-on or route change)
 function renderQcp() {

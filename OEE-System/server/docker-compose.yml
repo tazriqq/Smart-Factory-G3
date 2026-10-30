@@ -56,6 +56,7 @@ services:
   #   oee.<your domain>      -> http://web:80        (the page + its MQTT at /mqtt-view)
   #   control.<your domain>  -> http://web:80        (nginx picks the page by the name; MQTT at /mqtt)
   #   grafana.<your domain>  -> http://grafana:3000
+  #   sql.<your domain>      -> http://pgweb:8081    (behind a Cloudflare Access policy of your own)
   cloudflared:
     image: cloudflare/cloudflared:2024.12.2
     restart: unless-stopped

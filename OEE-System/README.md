@@ -83,7 +83,7 @@ OEE-System/
 | MQTT (ESP32) | `192.168.1.107:1883` | user `esp32` + `MQTT_ESP32_PASS` |
 | MQTT WebSocket | `ws://192.168.1.107:8080/mqtt` (nginx → Mosquitto 9001, ซึ่งเปิดเฉพาะบนเครื่อง server) | user `web` |
 | PostgreSQL | `192.168.1.107:5432` database `factory` | `reader` + `PG_READER_PASS` (อ่านอย่างเดียว) · `factory_admin` + `PG_ADMIN_PASSWORD` (แก้ได้ทุกอย่าง) |
-| pgweb (database ในเว็บ) | `http://127.0.0.1:8081` (บนเครื่อง server เท่านั้น) | ไม่ต้อง login · ล็อกเป็น `reader` + read only |
+| pgweb (database ในเว็บ) | `http://127.0.0.1:8081` (บนเครื่อง server เท่านั้น) · จากข้างนอก `https://sql.rdeewv.click` | ไม่ต้อง login (ข้างนอกผ่าน Cloudflare Access) · ล็อกเป็น `reader` + read only |
 
 **ผู้ใช้ MQTT** (สร้างจาก `.env` ทุกครั้งที่เปิด, สิทธิ์ใน `server/mosquitto/acl`)
 - `esp32` — ส่งข้อมูลได้ (บอร์ด)

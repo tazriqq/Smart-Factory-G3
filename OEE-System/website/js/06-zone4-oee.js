@@ -404,10 +404,12 @@
   const BASIC = [
     { icon: "🎛", name: "Control", note: "ดูสัญญาณ / ควบคุม", url: sub("control") || "control.html" },
     { icon: "📈", name: "Grafana", note: "กราฟสัญญาณสด", url: sub("grafana") || `${location.protocol}//${location.hostname || "192.168.1.107"}:3000/` },
+    // pgweb: sql.<domain> from outside, or on the server itself only (it listens on 127.0.0.1)
+    { icon: "🗄", name: "SQL", note: "ดู database · อ่านอย่างเดียว", url: sub("sql") || (/^(localhost|127\.0\.0\.1)$/.test(location.hostname) ? "http://127.0.0.1:8081/" : null) },
     { icon: "🔌", name: "Wiring map", note: "แผนผังต่อสายบอร์ด", url: "wiring-map.html" },
     { icon: "📟", name: "Board", note: "หน้าเว็บในบอร์ด · Wi-Fi เดียวกัน", url: "http://192.168.1.200/" },
     { icon: "💻", name: "GitHub", note: "คู่มือ / โค้ด", url: "https://github.com/tazriqq/Smart-Factory-G3" },
-  ];
+  ].filter((l) => l.url);
   const ICON = { "google sheet": "📊", sheet: "📊" };
   let extra = [];
   function drawLinks() {

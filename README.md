@@ -5,6 +5,7 @@
 > - **OEE dashboard:** https://oee.rdeewv.click
 > - **Control:** https://control.rdeewv.click
 > - **Grafana:** https://grafana.rdeewv.click
+> - **SQL (ดู database · อ่านอย่างเดียว):** https://sql.rdeewv.click
 > - **Google Sheet:** https://docs.google.com/spreadsheets/d/1ZiESObAtN6erJ4NQateA69M3uQN6uk8AtL6M_rZyW1g/edit?usp=sharing
 >
 > เข้าครั้งแรกจะมีหน้า login ของ Cloudflare ให้ใส่ email (ใช้ email ที่ได้จาก LEB2) แล้วกรอกรหัสที่ส่งไปทาง email
@@ -16,6 +17,7 @@
 | **OEE dashboard** | `https://oee.<domain>` | `http://<SERVER_IP>:8080` | แสดงผลอย่างเดียว ไม่ต้อง login |
 | **Control** | `https://control.<domain>` | `http://<SERVER_IP>:8080/control.html` | ควบคุม / ดูสัญญาณบอร์ด ต้อง login ครั้งแรกครั้งเดียว |
 | **Grafana** | `https://grafana.<domain>` | `http://<SERVER_IP>:3000` | กราฟสัญญาณสด |
+| **SQL** (pgweb) | `https://sql.<domain>` | `http://127.0.0.1:8081` (บนเครื่อง server เท่านั้น) | ดูตาราง / รัน SELECT · อ่านอย่างเดียว |
 | หน้าเว็บในบอร์ด | — | `http://192.168.1.200` | ใช้ได้แม้ server ปิด (ไม่บันทึกข้อมูล) |
 
 รายละเอียดเชิงลึก (ตาราง database, สูตร OEE, topic MQTT) อยู่ใน [`OEE-System/README.md`](OEE-System/README.md)
@@ -173,7 +175,7 @@ Windows `ipconfig` · Mac `ipconfig getifaddr en0` · Linux `hostname -I` แล
 - แท็บ **Line** (ภาพ 3D ไลน์ผลิต) กับ **OEE Dashboard** (กราฟ / ตาราง OEE แต่ละเครื่อง) สลับได้ด้วยปุ่มบนหัวเว็บหรือกด `1` / `2`
 - **แบบ minimal:** แถบไลน์ (กำลังผลิต · ผลผลิต · throughput · bottleneck) · ภาพ 3D กับป้ายเครื่อง (ความเร็ว · cycle · OEE) · แผงขวา (กะ / time frame 1 บรรทัด · timeline · เวลาเดิน / หยุด · A · P · Q · OEE · ดี / เสียแยกตาม product) · การตั้งค่าทั้งหมดอยู่หน้า control ส่วนรายละเอียดอยู่แท็บ OEE Dashboard
 - **กราฟกะ → ปุ่ม ⤢ ขยาย:** กราฟใหญ่ที่ลากเส้นจากทุกช่วงหยุด (สีแดง) ไปที่ป้าย *เวลา · นานเท่าไร · สาเหตุ* (ALARM, เครื่องไหนปิดสวิตช์ run / เปิดฝา / ความเร็ว 0% / ซ่อมบำรุง, ไลน์จำลองหยุด) + สรุปเวลาหยุดตามสาเหตุ (มากไปน้อย) + ตารางทุกช่วงที่หยุด · ไลน์นับว่าเดินเมื่อทุกเครื่องในเส้นทางผลิตเดิน
-- **Links** (ใต้แผง OEE และบนหัวหน้า control): Google Sheet · Control · Grafana · Wiring map · หน้าเว็บในบอร์ด · GitHub · ลิงก์ของคุณเองใส่ใน `server/.env` → `LINKS=Google Sheet|https://…;ชื่ออื่น|https://…` (ไม่ขึ้น GitHub เพราะ repo เป็น public)
+- **Links** (ใต้แผง OEE และบนหัวหน้า control): Google Sheet · Control · Grafana · SQL (`sql.<domain>`) · Wiring map · หน้าเว็บในบอร์ด · GitHub · ลิงก์ของคุณเองใส่ใน `server/.env` → `LINKS=Google Sheet|https://…;ชื่ออื่น|https://…` (ไม่ขึ้น GitHub เพราะ repo เป็น public)
 - **ชื่อ line:** `LINE_NAME` ใน `server/.env` (เช่น `BU 3`) ใช้แสดงบนหน้าเว็บและรายงาน LINE · `LINE_ID` (`line1`) ยังใช้ใน MQTT / database
 - **มือถือ:** ตรวจเองว่าเปิดจากมือถือ แล้วแสดงการ์ดข้อมูลสดแทนภาพ 3D ปุ่ม `📱 Simple view` / `🧊 3D view` บนหัวเว็บใช้สลับเองได้
 - กล่อง **Products** บนภาพไลน์แสดงเส้นทางผลิต (แก้ได้ที่หน้า control)
@@ -197,12 +199,12 @@ Windows `ipconfig` · Mac `ipconfig getifaddr en0` · Linux `hostname -I` แล
 
 - ค่าเริ่มต้นคือ *Connect board*: บอร์ดหลุดจะใช้ตัวจำลองเอง และเมื่อบอร์ดกลับมาก็กลับไปใช้บอร์ด
 - **ตัวจำลอง** มี (ต่อเครื่อง): ▶ RUN / ■ STOP · 🚪 เปิด / ปิดฝา · 🔧 Set-up · 🛠 Maintenance · ปุ่มหมุนความเร็ว (0–200%) และทั้งไลน์: Alarm, Undo, ไลน์จำลอง (Pause, 1× / 4× / 10×, Reset) · สาเหตุที่หยุดในกราฟกะแยกเป็น `STOP` / `set-up` / `maintenance` / `door open` / `speed 0 %` / ALARM
-- **QC · ของดี / ของเสีย ต่อ product:** ทุกเส้นทางผลิต (A / B ที่มีเครื่อง) มีปุ่ม **✓ GOOD** / **✕ REJECT** ของตัวเอง พร้อม good · scrap · yield แยกกัน · บันทึกเป็น event `good` / `reject` พร้อม product · ปุ่ม 2 ปุ่มบน**บอร์ดจริง**ยังนับให้ product ที่มีชิ้นงานออกล่าสุด (โหมด MONITOR แสดงตัวนับแยกตาม product ของบอร์ด)
+- **QC · ของดี / ของเสีย ต่อ product:** ทุกเส้นทางผลิต (A / B ที่มีเครื่อง) มีช่อง**จำนวน** (บนมือถือกดแล้วขึ้นแป้นตัวเลข, 1–999, เว้นว่าง = 1) กับปุ่ม **✓ GOOD** / **✕ REJECT** ของตัวเอง กดครั้งเดียวนับตามจำนวนในช่อง (Undo เอาออกทั้งก้อน) พร้อม good · scrap · yield แยกกัน · บันทึกเป็น event `good` / `reject` พร้อม product · ปุ่ม 2 ปุ่มบน**บอร์ดจริง**ยังนับให้ product ที่มีชิ้นงานออกล่าสุด (โหมด MONITOR แสดงตัวนับแยกตาม product ของบอร์ด)
 
 ### 4.3 หลายเครื่องพร้อมกัน
 - **ค่าจริงอยู่ที่ server ที่เดียว** (`control-hub`) เปิดหน้า control กี่เครื่องก็ได้ ทุกเครื่องเห็นค่าเดียวกันแบบ real time (เลื่อน slider บนโทรศัพท์ slider บน PC ก็ขยับตาม) และช่อง Events ขึ้น `… · from another device`
 - **ถ้าชนกัน คนที่คำสั่งถึง server ก่อนชนะ** คำสั่งที่มาทีหลังถูก ignore และขึ้น `ignored: someone else changed … first`
-- GOOD / REJECT / Undo / Reset นับทุกครั้ง
+- GOOD / REJECT / Undo / Reset นับทุกครั้ง · **ยอด GOOD / REJECT มีที่ control-hub ที่เดียว** หน้า control และหน้า OEE ทุกจอแสดงเลขเดียวกัน (เปิดหน้า OEE ทีหลังก็ได้ยอดเต็ม) · **Undo** เอา GOOD / REJECT ครั้งล่าสุดออก · **Reset** ตั้งยอดกลับเป็น 0 ทุกหน้า
 
 ### 4.4 Shift & time frame (ของแผง OEE ทุกจอ)
 - เวลาเริ่มกะ, ชั่วโมงทำงาน, เวลาพัก, ideal cycle, นาฬิกา (เวลาจริง / demo 1 วินาที = 1 นาที) และ time frame (15 นาที / 1 ชม. / 4 ชม. / ทั้งกะ / Custom) · ตั้งที่การ์ดนี้แล้วหน้า OEE ทุกจอเปลี่ยนตาม (เก็บที่ control-hub)
