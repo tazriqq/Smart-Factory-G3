@@ -10,6 +10,7 @@ __MACOSX/
 
 # server passwords (template: server/.env.example)
 .env
+.env.bak*
 
 # Claude MCP config with the database password (template: .mcp.example.json)
 .mcp.json
