@@ -75,6 +75,9 @@ SIM_RECORD_REAL = os.environ.get("SIM_RECORD_REAL", "") == "1"
 T_PAIR, T_EVENTS, T_MINUTES = BASE + "/control/pair", BASE + "/events", BASE + "/minutes"
 # the OEE panel of every dashboard, from the database (oee.py): posted to <line>/oee (retained) every OEE_EVERY_S
 T_OEE, DATABASE_URI, OEE_EVERY_S = BASE + "/oee", os.environ.get("DATABASE_URI", ""), 5.0
+# the simulated line for every dashboard to draw (SimLine.snapshot): retained, every SIM_EVERY_S while it runs
+T_SIM, SIM_EVERY_S = BASE + "/sim", 0.5
+pending_sim = None   # the retained snapshot from before a restart, applied once the control state is back
 PRESS_EVENT = {"good": "good", "rej": "reject", "undo": "undo", "reset": "reset", "clear": "oee_clear"}
 QLOG_MAX = 200
 CLOCK_SPEEDS = (1, 10, 60)
@@ -255,6 +258,8 @@ def on_command(m):
             state["qc"] = {"A": {"good": 0, "rej": 0}, "B": {"good": 0, "rej": 0}}
             state["qlog"] = []
             state["reset"] += 1
+            sim.clear()          # the pages empty their line on Reset: so does the line they draw
+            sim.reset_totals()
             outbox.append({"machine": 0, "event": "reset"})
             dirty = True
         elif k in ("good", "rej", "clear") and not p:
@@ -373,21 +378,61 @@ def board_wait():
 
 
 class SimLine:
-    """the line run on the server while the control page drives it (the board's rules, see the top)"""
+    """the line run on the server while the control page drives it (the board's rules, see the top). It runs whenever
+    the control page's simulator drives the line (src "sim"), and every dashboard draws this one line from its state
+    (<line>/sim, see snapshot): parts on each belt, each machine's part and progress, what came off the line. It
+    writes minutes rows only while it is recorded (record: within the shift, on the simulated clock or with
+    SIM_RECORD_REAL)."""
     CYCLE_MS = (18000, 30000, 24000, 36000)   # = CYCLE_MS in the sketch and ideal_cycle_s in the machines table
     BUF_CAP = 48
     SUMMARY_S = 60.0
 
     def __init__(self):
-        self.on, self.route, self.retime = False, None, False
+        self.on, self.route, self.retime, self.record = False, None, False, False
+        self.set_route(state["route"])
         self.clear()
+        self.reset_totals()
 
     def clear(self):
         """parts in progress gone (route change, start), and a fresh minute"""
         self.busy, self.work, self.buf = [False] * 4, [0.0] * 4, [0] * 4
+        self.started = [0.0] * 4   # the line's time each machine took its part (its last cycle time on the pages)
         self.run_ms, self.stop_ms, self.alarm_ms, self.parts, self.out = [0.0] * 4, [0.0] * 4, [0.0] * 4, [0] * 4, [0] * 4
         self.minute_at = line_ms()
         self.test = testing()   # this minute's rows: source test (simulated clock) or sim (real time)
+
+    def reset_totals(self):
+        """what the pages show of the line since the route was set or Reset pressed: parts made, where each
+        machine's time went (as on the machine tags: run, stopped, waiting for a part, blocked by a full belt),
+        and parts off the line per product"""
+        self.tot = {"done": [0] * 4, "run": [0.0] * 4, "stop": [0.0] * 4, "wait": [0.0] * 4, "block": [0.0] * 4,
+                    "last": [0.0] * 4, "out": [0, 0], "elapsed": 0.0}
+
+    def snapshot(self):
+        """the line for the dashboards (<line>/sim, retained): they draw it instead of simulating it themselves"""
+        r = lambda xs: [round(x, 1) for x in xs]
+        return {"on": 1 if self.on else 0, "route": self.route, "t": round(line_ms()), "busy": [1 if b else 0 for b in self.busy],
+                "work": [round(w) for w in self.work], "buf": list(self.buf), "done": list(self.tot["done"]),
+                "run": r(self.tot["run"]), "stop": r(self.tot["stop"]), "wait": r(self.tot["wait"]), "block": r(self.tot["block"]),
+                "last": r(self.tot["last"]), "out": list(self.tot["out"]), "elapsed": round(self.tot["elapsed"], 1)}
+
+    def restore(self, m):
+        """carry on from the retained snapshot after a restart (the same route only)"""
+        if not isinstance(m, dict) or m.get("route") != state["route"]:
+            return
+        try:
+            self.set_route(m["route"])
+            self.busy = [bool(x) for x in m["busy"]][:4]
+            self.work = [float(x) for x in m["work"]][:4]
+            self.buf = [max(0, min(self.BUF_CAP, int(x))) for x in m["buf"]][:4]
+            for k in ("done", "run", "stop", "wait", "block", "last"):
+                self.tot[k] = [type(self.tot[k][0])(x) for x in m[k]][:4]
+            self.tot["out"] = [int(x) for x in m["out"]][:2]
+            self.tot["elapsed"] = float(m["elapsed"])
+            self.on = True
+        except (KeyError, TypeError, ValueError):
+            self.clear()
+            self.reset_totals()
 
     def set_route(self, route):
         self.route = route
@@ -409,10 +454,10 @@ class SimLine:
                     and not state["maint"][n] and state["sim"]["run"] and self.speed(n) > 0)
 
     def summary(self, on_time=False):
-        """a minutes row per machine, at the line's time; on_time = the minute is up (the next one starts where it
-        ended, no drift)"""
+        """a minutes row per machine, at the line's time (only while recorded); on_time = the minute is up (the next
+        one starts where it ended, no drift)"""
         at = self.minute_at + self.SUMMARY_S * 1000 if on_time else line_ms()
-        for n in range(4):
+        for n in range(4 if self.record else 0):
             p = self.prod[n]
             minutes_out.append({"machine": n + 1, "at": at, "source": "test" if self.test else "sim", **({"product": "AB"[p - 1]} if p else {}),
                                 "run_s": round(self.run_ms[n] / 1000), "stop_s": round(self.stop_ms[n] / 1000),
@@ -422,8 +467,9 @@ class SimLine:
         self.minute_at = at
         self.test = testing()
 
-    def step(self, dt_ms, active):
-        """dt_ms of the line's time has gone by; active = the simulated line is what drives the line now"""
+    def step(self, dt_ms, active, record):
+        """dt_ms of the line's time has gone by; active = the simulated line is what drives the line now;
+        record = its minutes rows go to the database"""
         if self.retime:            # the clock was changed: the minute so far belongs to the old one
             self.retime = False
             if self.on:
@@ -434,12 +480,23 @@ class SimLine:
                 self.summary()
                 self.on = False
             return
+        if record != self.record:  # recording starts or stops (the shift, the clock): the minute so far is the old way
+            if self.on:
+                self.summary()
+            self.record = record
         if not self.on or state["route"] != self.route:
             if self.on:
                 self.summary()   # the minute so far, on the old route
+            new_route = state["route"] != self.route
             self.on = True
             self.set_route(state["route"])
-            self.clear()
+            if new_route or not any(self.busy) and not any(self.buf):
+                self.clear()
+                self.reset_totals()
+            else:                # the line carries on where it stood (e.g. back from the board): a fresh minute only
+                self.minute_at, self.test = line_ms(), testing()
+        tot, s = self.tot, dt_ms / 1000
+        tot["elapsed"] += s
         for n in range(4):
             if state["al"]:
                 self.stop_ms[n] += dt_ms
@@ -457,7 +514,20 @@ class SimLine:
                 elif self.buf[self.prev[n]] > 0:
                     self.buf[self.prev[n]] -= 1
                     self.busy[n] = True
-            if not self.busy[n] or not self.running(n):
+                if self.busy[n]:
+                    self.started[n] = line_ms()
+            # where the time went, as on the pages' machine tags: run (a part and speed), blocked (done, no room
+            # after it), stopped (speed 0 / switched off), waiting for a part
+            run = self.running(n)
+            if self.busy[n] and self.work[n] >= self.CYCLE_MS[n]:
+                tot["block"][n] += s
+            elif not run:
+                tot["stop"][n] += s
+            elif not self.busy[n]:
+                tot["wait"][n] += s
+            else:
+                tot["run"][n] += s
+            if not self.busy[n] or not run:
                 continue
             if self.work[n] < self.CYCLE_MS[n]:
                 self.work[n] += dt_ms * self.speed(n) / 100
@@ -469,7 +539,10 @@ class SimLine:
                 self.buf[n] += 1
             else:
                 self.out[n] += 1                  # off the end of its route: the product's output
+                tot["out"][self.prod[n] - 1] += 1
             self.parts[n] += 1
+            tot["done"][n] += 1
+            tot["last"][n] = (line_ms() - self.started[n]) / 1000
             self.busy[n], self.work[n] = False, 0.0
         if line_ms() - self.minute_at >= self.SUMMARY_S * 1000:
             self.summary(on_time=True)
@@ -534,7 +607,14 @@ def oee_loop(client):
 
 def on_message(client, _userdata, msg):
     global board_at, restored, dirty
-    global board_status
+    global board_status, pending_sim
+    if msg.topic == T_SIM:
+        if pending_sim is None:
+            try:
+                pending_sim = json.loads(msg.payload) or {}
+            except ValueError:
+                pending_sim = {}
+        return
     if msg.topic == T_BOARD:
         board_at = time.monotonic()
         return
@@ -594,7 +674,7 @@ def on_message(client, _userdata, msg):
 
 def on_connect(client, _userdata, _flags, reason, _props):
     print(f"control-hub: connected ({reason})", flush=True)
-    client.subscribe([(T_STATE, 1), (T_SET, 1), (T_BOARD, 0), (T_PAIR, 1), (T_STATUS, 1)])
+    client.subscribe([(T_STATE, 1), (T_SET, 1), (T_BOARD, 0), (T_PAIR, 1), (T_STATUS, 1), (T_SIM, 0)])
 
 
 def main():
@@ -609,16 +689,20 @@ def main():
     if DATABASE_URI:
         threading.Thread(target=oee_loop, args=(client,), daemon=True).start()
     started, last_pub, last_src = time.monotonic(), 0.0, None
-    last_step = time.monotonic()
+    last_step, last_sim, sim_was_on, sim_restored = time.monotonic(), 0.0, False, False
     while True:
         time.sleep(0.1)
         now = time.monotonic()
         dt, last_step = now - last_step, now
-        if restored:
+        if restored and not sim_restored and (pending_sim is not None or now - started > 4):
+            sim_restored = True          # carry on from the line as it stood before a restart (if there was one)
+            sim.restore(pending_sim)
+        if restored and sim_restored:
             c = state["clock"]
             speed = 0 if c["mode"] == "sim" and c["paused"] else c["speed"] if c["mode"] == "sim" else 1
-            # the simulated line writes rows on the simulated clock (test); in real time only with SIM_RECORD_REAL
-            sim.step(min(dt, 1.0) * 1000 * speed, src() == "sim" and in_shift() and (testing() or SIM_RECORD_REAL))
+            # it runs whenever the simulator drives the line; it writes rows within the shift, on the simulated clock
+            # (test), in real time only with SIM_RECORD_REAL
+            sim.step(min(dt, 1.0) * 1000 * speed, src() == "sim", in_shift() and (testing() or SIM_RECORD_REAL))
         if not client.is_connected():
             continue
         if not restored and now - started > 2:   # no retained state to carry on from
@@ -633,6 +717,9 @@ def main():
         while minutes_out:
             row = minutes_out.pop(0)
             client.publish(T_MINUTES, json.dumps({**{k: v for k, v in row.items() if k != "at"}, "age_ms": round(wall_ms() - row["at"])}), qos=1)
+        if sim_restored and (sim.on or sim_was_on) and now - last_sim >= SIM_EVERY_S:
+            client.publish(T_SIM, json.dumps(sim.snapshot(), separators=(",", ":")), qos=0, retain=True)
+            last_sim, sim_was_on = now, sim.on
         s = src() + board_wait()
         if dirty or s != last_src or now - last_pub > KEEPALIVE_S:
             publish(client)

@@ -24,3 +24,4 @@ topic write group3/dpx/+/events
 # and minutes, marked "source":"sim"
 topic write group3/dpx/+/minutes
 topic write group3/dpx/+/oee
+topic write group3/dpx/+/sim

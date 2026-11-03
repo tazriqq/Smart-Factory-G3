@@ -522,8 +522,69 @@ function followLocalQc() {
 }
 const qcOf = (p) => (boardLive() ? BOARD().qcP?.[p] || { good: 0, rej: 0 } : qcL[p]);
 const qc = () => { const a = qcOf(0), b = qcOf(1); return { good: a.good + b.good, rej: a.rej + b.rej }; };
-const outOf = (p) => fin[p] + (boardLive() ? 0 : qcBase[p]);
+const outOf = (p) => fin[p] + (boardLive() || hubDriven() ? 0 : qcBase[p]);
+
+// ---------- the server's simulated line (server/control-hub, <line>/sim) ----------
+// Without a board the line is the one the server runs (and records): every page draws it from the server's
+// snapshot (setSim, about twice a second) instead of simulating it itself, so all screens show the same belts,
+// parts and counts, and a page opened later starts where the line stands. In between, the parts slide along
+// their belts and each machine's part fills its cycle; the snapshot then puts everything where the server has it.
+let hubSim = null, hubSimAt = -1e9;
+const hubDriven = () => !boardLive() && !!hubSim && hubSim.on === 1 && hubSim.route === routeText(ROUTE) && performance.now() - hubSimAt < 5000;
+const stageAfter = (i) => { const p = prodOf(i); return p < 0 ? 0 : ROUTE[p].indexOf(i) + 1; };
+const beltRoom = (b) => Math.floor((b.len - 18) / GAP) + 1;
+// n more parts of this stage on belt b: laid out back from its end when the belt is empty (a page just opened),
+// else at its start, into the crate when there is no room
+function addParts(b, n, stage) {
+  if (!b.parts.length && n > 1) {
+    const k = Math.min(n, beltRoom(b));
+    for (let j = 0; j < k; j++) b.parts.push({ s: Math.max(0, b.len - 18 - j * GAP), stage, g: makePart(stage, b.partG) });
+    n -= k;
+  }
+  for (; n > 0; n--) if (!push(b, stage) && !(b.box.length < BOX_CAP && b.box.push(stage))) break;
+}
+function takeParts(b, n) {   // the next machine took them: the ones at the front of the belt first
+  for (; n > 0 && b.parts.length; n--) b.parts.shift().g.remove();
+  for (; n > 0 && b.box.length; n--) b.box.shift();
+}
+function setSim(m) {
+  if (!m || typeof m !== 'object') return;
+  const first = !hubSim || hubSim.route !== m.route;
+  hubSim = m; hubSimAt = performance.now();
+  if (!hubDriven()) return;
+  simT = +m.elapsed || 0;
+  MACHINES.forEach((mc, i) => {
+    const s = st[i], work = (m.work[i] || 0) / 1000;
+    if (m.busy[i]) { s.part = s.part || { stage: stageAfter(i) - 1 }; s.mode = work >= mc.cycle ? 'blocked' : 'run'; s.t = Math.min(work, mc.cycle); }
+    else { s.part = null; s.mode = 'starved'; s.t = 0; }
+    Object.assign(s, { done: m.done[i] | 0, bad: 0, run: +m.run[i] || 0, stop: +m.stop[i] || 0, wait: +m.wait[i] || 0, block: +m.block[i] || 0, last: +m.last[i] || 0, pulse: 0 });
+  });
+  BELTS.forEach((b) => {
+    if (b.to === 9) {          // off the line: the new ones ride the output belt (on a page just opened: none)
+      const p = b.product, d = (m.out[p] | 0) - fin[p];
+      if (d > 0 && !first) { addParts(b, Math.min(d, 6), stageAfter(b.from)); lastOut = p; }
+      fin[p] = m.out[p] | 0;
+      return;
+    }
+    const want = Math.max(0, m.buf[b.from] | 0), have = b.parts.length + b.box.length;
+    if (want > have) addParts(b, want - have, stageAfter(b.from));
+    else if (want < have) takeParts(b, have - want);
+  });
+  finished = fin[0] + fin[1];
+}
+// between snapshots: the belts move, each machine's part fills up to (not past) its cycle; nothing is made here
+function stepDrawn(dt) {
+  simT += dt;
+  BELTS.forEach((b) => {
+    const v = SPEED * dt; b.off += v;
+    b.parts.forEach((p, k) => { p.s = Math.min(p.s + v, k === 0 ? b.len - 18 : b.parts[k - 1].s - GAP); });
+    if (b.to === 9 && b.parts.length && b.parts[0].s >= b.len - 18.5) b.parts.shift().g.remove();   // counted by the server
+  });
+  BELTS.forEach((b) => { if (b.box.length && push(b, b.box[0])) b.box.shift(); });
+  MACHINES.forEach((m, i) => { const s = st[i]; if (s.mode === 'run') s.t = Math.min(s.t + dt * spOf(i), m.cycle * 0.98); });
+}
 function step(dt) {
+  if (hubDriven()) { stepDrawn(dt); return; }
   simT += dt;
   BELTS.forEach((b) => {
     const v = SPEED * dt; b.off += v;
@@ -1323,6 +1384,7 @@ window.__line = { MACHINES, BELTS, slots, placeTags, fit, oeeOf, speedChanged() 
   },
   reset,
   setRouteText(t) { const r = parseRoute(t); if (r) setRoute(r); },
+  setSim,
   // why the line is stopped right now ("" = running): the alarm, a paused simulation, or each machine on a
   // product route that stands still, and why. The OEE panel keeps it with each stop in its timeline.
   stopCause() {
