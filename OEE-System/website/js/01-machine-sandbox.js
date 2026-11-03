@@ -35,18 +35,45 @@
   const FRAME_MS = 1000 / 30 - 2, ids = {};
   let seq = 0, slotAt = -1e9;   // a request may wait a few browser frames: its handle maps to whichever is pending
   const due = (ts) => ts === slotAt || (ts - slotAt >= FRAME_MS && (slotAt = ts, true));
-  function gated(cb) {
+  // nothing is drawn while nobody looks: another tab, the window minimised or another window / app in front.
+  // The waiting requests are parked and asked for again when the page is back in front.
+  // The CSS animations (beacons, spinning parts ...) stop too: <html class="mx-asleep"> pauses every one of them.
+  const asleep = () => document.hidden || !document.hasFocus(), parked = new Map();
+  const sleepCss = document.createElement("style");
+  sleepCss.textContent = ".mx-asleep *, .mx-asleep *::before, .mx-asleep *::after { animation-play-state: paused !important; }";
+  document.head.append(sleepCss);
+  const wake = () => {
+    const off = asleep();
+    document.documentElement.classList.toggle("mx-asleep", off);
+    if (off) return;
+    for (const [k, step] of parked) ids[k] = rraf(step);
+    parked.clear();
+  };
+  document.addEventListener("visibilitychange", wake);
+  addEventListener("focus", wake);
+  addEventListener("blur", wake);
+  wake();
+  // wait(ts): true while this loop should skip the frame (a machine standing still draws once a second)
+  function gated(cb, wait) {
     const k = ++seq;
-    const step = (ts) => { if (!due(ts)) { ids[k] = rraf(step); return; } delete ids[k]; cb(ts); };
+    const step = (ts) => {
+      if (asleep()) { delete ids[k]; parked.set(k, step); return; }
+      if ((wait && wait(ts)) || !due(ts)) { ids[k] = rraf(step); return; }
+      delete ids[k]; cb(ts);
+    };
     ids[k] = rraf(step);
     return k;
   }
-  const ungate = (k) => { if (ids[k] !== undefined) { rcaf(ids[k]); delete ids[k]; } };
+  const ungate = (k) => { if (ids[k] !== undefined) { rcaf(ids[k]); delete ids[k]; } parked.delete(k); };
+  // a machine that has stood still this long (stopped, 0 %, no part, set-up, the line paused) draws once a second:
+  // long enough for a door or the spindle to finish moving first; it is back to full speed within a second of starting
+  const STILL_MS = 3000, STILL_FRAME_MS = 1000;
   function time(i) {
     if (clocks[i]) return clocks[i];
-    let r = rt(), v = r;
-    const now = () => { const n = rt(), k = window.__setup?.[i] || window.__idle?.(i) ? 0 : window.__speeds[i] * (window.__gate ? window.__gate(i) : 1); if (!window.__paused) v += (n - r) * (k > 0 ? Math.max(0.02, k) : 0); r = n; return v; };   // a stopped machine (0 %) or one with no part yet stands still
-    return (clocks[i] = { now, raf: (cb) => gated(() => cb(now())), caf: ungate, perf: { now, timeOrigin: performance.timeOrigin } });
+    let r = rt(), v = r, movedAt = r, drawnAt = -1e9;
+    const now = () => { const n = rt(), k = window.__setup?.[i] || window.__idle?.(i) ? 0 : window.__speeds[i] * (window.__gate ? window.__gate(i) : 1); if (!window.__paused) v += (n - r) * (k > 0 ? Math.max(0.02, k) : 0); if (k > 0 && !window.__paused) movedAt = n; r = n; return v; };   // a stopped machine (0 %) or one with no part yet stands still
+    const still = (ts) => rt() - movedAt > STILL_MS && ts - drawnAt < STILL_FRAME_MS;
+    return (clocks[i] = { now, raf: (cb) => gated((ts) => { drawnAt = ts; cb(now()); }, still), caf: ungate, perf: { now, timeOrigin: performance.timeOrigin } });
   }
   window.__mx = { doc: (id) => cache[id] || (cache[id] = make(id)), time, raf: gated };
 })();

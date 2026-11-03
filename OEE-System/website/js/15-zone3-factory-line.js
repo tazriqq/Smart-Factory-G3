@@ -1191,6 +1191,31 @@ viewBtn.addEventListener('click', () => {
 document.querySelector('.dash-bar .lf-tabs, .dash-title')?.after(viewBtn);
 [narrow, touchOnly].forEach((m) => m.addEventListener('change', applyView));
 applyView();
+// a screen left on: no mouse, key or touch for IDLE_MS turns on Simple view by itself (the 3D floor is the heavy
+// part); the first touch brings back the view chosen. Not remembered: the choice above stays as it was.
+const IDLE_MS = 10 * 60000;
+let idleAuto = false, idleTimer = 0, actedAt = -Infinity;
+function idleSimple() {
+  if (document.body.classList.contains('phone')) return;
+  idleAuto = true;
+  document.body.classList.add('phone');
+  viewBtn.textContent = '🧊 3D view';
+  renderPhone();
+}
+function awake(e) {
+  if (idleAuto) {
+    idleAuto = false;
+    // the view button itself: its click sets the view (from Simple to 3D), so leave the page as it is
+    if (!e?.target?.closest?.('.view-toggle')) { applyView(); renderPhone(); }
+  }
+  const t = performance.now();
+  if (t - actedAt < 1000) return;   // a moving mouse: once a second is enough
+  actedAt = t;
+  clearTimeout(idleTimer);
+  idleTimer = setTimeout(idleSimple, IDLE_MS);
+}
+['pointermove', 'pointerdown', 'keydown', 'wheel', 'touchstart'].forEach((k) => addEventListener(k, awake, { passive: true, capture: true }));
+awake();
 const mv = document.createElement('section');
 mv.className = 'm-view'; mv.setAttribute('aria-label', 'Line, live');
 mv.innerHTML = `<div class="mv-outs"></div><div class="mv-ms">${MACHINES.map((m, i) => `<div class="mv-card mv-m">
