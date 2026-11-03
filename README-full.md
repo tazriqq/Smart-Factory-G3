@@ -326,6 +326,16 @@ database ──► sheets-sync (บน server) ──HTTPS + SHEETS_KEY──►
 - **Claude Code บนเครื่อง server:** ในโฟลเดอร์ `OEE-System` copy `.mcp.example.json` เป็น `.mcp.json` ใส่ `PG_READER_PASS` → เปิด `claude` ในโฟลเดอร์นั้น → `/mcp`
 - **Claude Desktop:** Settings → Developer → Edit Config → server `oee-db` ใช้ `uvx postgres-mcp --access-mode=restricted` กับ `DATABASE_URI=postgresql://reader:<PG_READER_PASS>@<SERVER_IP>:5432/factory`
 
+### Claude จากที่ไหนก็ได้ (remote MCP: `https://mcp.<domain>/sse`)
+service `postgres-mcp` (อ่านอย่างเดียว: user `reader` + `--access-mode=restricted`) อยู่หลัง `mcp-gateway` ซึ่งเป็นทางเข้าทางเดียว ต้องมี token หรือ login ก่อนเสมอ · ค่าอยู่ใน `server/.env`: `MCP_PUBLIC_URL`, `MCP_TOKEN`, `MCP_OWNER_PASSWORD`
+
+- **ตั้งครั้งแรก:** Cloudflare dashboard → Tunnels → Routes → เพิ่ม `mcp.<domain>` → `http://localhost:8000` (gateway ของเครื่อง ส่งต่อไป `127.0.0.1:8098`) · **ห้ามเอา `mcp.<domain>` ไปไว้หลัง Cloudflare Access** เพราะ claude.ai ต่อจาก server ของ Anthropic จึงผ่านหน้า login อีเมลไม่ได้ (gateway มี login ของตัวเองแล้ว)
+- **Claude Code (เครื่องไหนก็ได้):** `claude mcp add --transport sse oee-db https://mcp.<domain>/sse --header "Authorization: Bearer <MCP_TOKEN>"`
+- **Claude Desktop:** Settings → Connectors → Add custom connector → `https://mcp.<domain>/sse` (login แบบเดียวกับ claude.ai ด้านล่าง)
+- **claude.ai (เว็บ / มือถือ):** Settings → Connectors → Add custom connector → `https://mcp.<domain>/sse` → กด Connect → หน้า login ของ gateway ถาม **รหัสเจ้าของ** (`MCP_OWNER_PASSWORD`) → อนุญาต · token ใช้ได้ 1 ชม. แล้วต่ออายุเอง (refresh token 90 วัน) · ใส่รหัสผิด 10 ครั้งใน 10 นาทีถูกบล็อก 10 นาที · ส่ง code กลับได้เฉพาะ claude.ai / claude.com / localhost
+- **ให้ทุก Claude ที่ login ไว้ออกจากระบบ:** `docker compose exec mcp-gateway rm /state/oauth.json && docker compose restart mcp-gateway` · เปลี่ยน `MCP_TOKEN` / `MCP_OWNER_PASSWORD` ใน `.env` แล้ว `docker compose up -d mcp-gateway`
+- อ่านได้ทั้ง database (ทุกตาราง) แต่แก้ไม่ได้ · query ที่นานเกิน 30 วินาทีถูกตัด (`reader`)
+
 ---
 
 ## 9. ใช้งานประจำวัน (ในโฟลเดอร์ `OEE-System/server`)

@@ -172,6 +172,34 @@ services:
       DATABASE_URI: postgresql://reader:${PG_READER_PASS}@timescaledb:5432/${PG_DB}
       LINE_ID: ${LINE_ID}
 
+  # Claude from anywhere: the database through MCP, read only (user reader, postgres-mcp restricted mode). It speaks
+  # MCP over SSE inside Docker only; mcp-gateway is the one way in, with a token or the OAuth login (claude.ai)
+  postgres-mcp:
+    image: crystaldba/postgres-mcp:0.3.0
+    restart: unless-stopped
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    environment:
+      DATABASE_URI: postgresql://reader:${PG_READER_PASS}@timescaledb:5432/${PG_DB}
+    command: ["--access-mode=restricted", "--transport=sse", "--sse-host=0.0.0.0", "--sse-port=8000"]
+
+  # https://mcp.<domain>/sse: Claude Code / Desktop with MCP_TOKEN, claude.ai through OAuth (MCP_OWNER_PASSWORD);
+  # on this computer only (127.0.0.1), the Cloudflare tunnel comes in through the computer's gateway
+  mcp-gateway:
+    build: ./mcp-gateway
+    restart: unless-stopped
+    depends_on:
+      - postgres-mcp
+    ports:
+      - "127.0.0.1:${MCP_PORT:-8098}:8099"
+    environment:
+      MCP_PUBLIC_URL: ${MCP_PUBLIC_URL:-https://mcp.example.com}
+      MCP_TOKEN: ${MCP_TOKEN:-}
+      MCP_OWNER_PASSWORD: ${MCP_OWNER_PASSWORD:-}
+    volumes:
+      - mcp-state:/state
+
   # every SHEETS_EVERY_MIN minutes: OEE summary from the database -> Google Sheet (+ the daily report to LINE)
   sheets-sync:
     build: ./sheets-sync
@@ -273,3 +301,4 @@ volumes:
   influxdb-config:
   grafana-data:
   timescaledb-data:
+  mcp-state:
