@@ -192,7 +192,9 @@ async def authorize_post(request):
     a = addr(request)
     if blocked(a):
         return page(q, c["name"], "ใส่รหัสผิดหลายครั้งเกินไป ลองใหม่ใน 10 นาที")
-    if not OWNER_PASS or not hmac.compare_digest(str(q.get("password", "")), OWNER_PASS):
+    # pasted with spaces or the whole .env line ("MCP_OWNER_PASSWORD=..."): only the password counts
+    typed = str(q.get("password", "")).strip().removeprefix("MCP_OWNER_PASSWORD=").strip().strip('"\'')
+    if not OWNER_PASS or not hmac.compare_digest(typed, OWNER_PASS):
         misses.setdefault(a, []).append(time.time())
         print(f"mcp-gateway: wrong owner password from {a}", flush=True)
         await asyncio.sleep(1)
