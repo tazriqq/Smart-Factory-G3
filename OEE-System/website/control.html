@@ -375,7 +375,7 @@ main>*{min-width:0}
   </section>
 
   <section class="card" aria-label="Shift and time frame">
-    <div class="log-h"><span class="k">Shift & time frame · แผง OEE ของทุกจอใช้ค่านี้</span><span class="grow"></span><button class="btn" id="oee-clear" type="button">Clear OEE record</button></div>
+    <div class="log-h"><span class="k">Shift & time frame · แผง OEE ของทุกจอใช้ค่านี้</span></div>
     <div class="sh-form">
       <label>Shift start<input class="in" type="time" data-s="start"></label>
       <label>Shifts<select class="in" data-s="shifts" title="กะต่อวัน ต่อกันไป: แต่ละกะยาว ชั่วโมงทำงาน + พัก"><option value="1">1</option><option value="2">2</option><option value="3">3</option></select></label>
@@ -730,13 +730,6 @@ document.querySelectorAll(".sh-form [data-s]").forEach((box) => {
   });
 });
 document.querySelectorAll(".sh-form [data-win]").forEach((b) => b.addEventListener("click", () => { ctl.shift.win = b.dataset.win; renderShift(); sendCtl(`time frame → ${b.textContent}`, "n"); }));
-// clear the OEE record of every dashboard (asks twice)
-$("oee-clear").addEventListener("click", (e) => {
-  const b = e.currentTarget;
-  if (!b.hasAttribute("data-armed")) { b.setAttribute("data-armed", ""); b.textContent = "Click again to clear"; setTimeout(() => { b.removeAttribute("data-armed"); b.textContent = "Clear OEE record"; }, 3000); return; }
-  b.removeAttribute("data-armed"); b.textContent = "Clear OEE record";
-  press("clear"); sendCtl("OEE record cleared on every dashboard", "r");
-});
 renderShift();
 
 // links in the header: the dashboard, Grafana, the wiring map, and the server's own (LINKS in server/.env)

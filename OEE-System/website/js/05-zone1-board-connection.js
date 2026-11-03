@@ -273,11 +273,15 @@ async function openMqtt(my) {
   // the control page (control.html) posts its knobs / switches here; it drives the line while no board is sending
   const controlTopic = topic.replace(/\/[^/]+$/, "/control");
   await new Promise((ok) => client.subscribe(controlTopic, { qos: 0 }, () => ok()));
+  // the OEE panel's numbers and timeline from the database (server/control-hub/oee.py, retained, every few seconds)
+  const oeeTopic = topic.replace(/\/[^/]+$/, "/oee");
+  await new Promise((ok) => client.subscribe(oeeTopic, { qos: 0 }, () => ok()));
   const feed = splitter();
   client.on("message", (t, payload) => {
     if (my !== gen) return;
     if (t === topic) { if (controlSrc !== "sim") feed(payload.toString() + "\n"); }   // the control page chose its simulator: ignore the board
     else if (t === controlTopic) { let m; try { m = JSON.parse(payload.toString()); } catch { return; } followControl(m); }
+    else if (t === oeeTopic) { let m; try { m = JSON.parse(payload.toString()); } catch { return; } window.oee?.setLive?.(m); }
   });
   client.on("offline", () => { if (my === gen && conn) setPill("error", "MQTT · reconnecting …"); });
   client.on("connect", () => { if (my === gen && conn) setPill("on", "Connected · MQTT"); });

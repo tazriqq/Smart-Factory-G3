@@ -137,11 +137,7 @@
 <div class="oee-chart"><svg aria-label="Shift timeline" class="oee-bar" role="img"></svg></div>
 <div aria-label="Parts" class="oee-parts" role="group">
 <span class="oee-group-name">Parts</span>
-<button data-part="good" type="button">+1 Good</button>
-<button data-part="bad" type="button">+1 Reject</button>
-<button data-part="undo" type="button">Undo last</button>
 <span class="oee-count">in time frame: <b data-o="good">0</b> good · <b data-o="bad">0</b> reject</span>
-<button class="oee-clear" data-oee="clear" type="button">Clear record</button>
 </div>
 <div class="oee-stats">
 <div><span>Plan operating time</span><b data-o="plan">—</b><small data-o="planof"></small></div>
@@ -156,11 +152,11 @@
 <div class="oee-total"><span>OEE<em>A × P × Q</em></span><b data-o="oee">—</b><small data-o="of"></small></div>
 </div>
 <div class="oee-legend">
-<span><i class="oee-sw oee-sw-run"></i>Run: spindle on and an axis moving</span>
+<span><i class="oee-sw oee-sw-run"></i>Run: from the database, every 5 s</span>
 <span><i class="oee-sw oee-sw-stop"></i>Stopped inside the shift</span>
 <span><i class="oee-sw oee-sw-break"></i>Break (planned stop)</span>
 <span><i class="oee-sw oee-sw-nr"></i>Not recorded (board disconnected, why in the timeline)</span>
-<span><i class="oee-sw oee-sw-gap"></i>Not recorded (page closed)</span>
+<span><i class="oee-sw oee-sw-gap"></i>Not recorded (no rows in the database)</span>
 <span><i class="oee-sw oee-sw-win"></i>Time frame</span>
 </div>
 </section><div class="oee-fs-row"><button aria-label="Full screen OEE" aria-pressed="false" class="lb-btn lf-full oee-full" title="Full screen" type="button">⛶</button></div>

@@ -23,3 +23,4 @@ topic write group3/dpx/+/events
 # ...and, while the control page drives the line (no board), the simulated line's rows: events (part / output)
 # and minutes, marked "source":"sim"
 topic write group3/dpx/+/minutes
+topic write group3/dpx/+/oee

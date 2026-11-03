@@ -58,6 +58,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import paho.mqtt.client as mqtt
 
+import oee
+
 HOST = os.environ.get("MQTT_HOST", "mosquitto")
 PORT = int(os.environ.get("MQTT_PORT", "1883"))
 USER = os.environ["MQTT_USER"]
@@ -71,6 +73,8 @@ LINKS = [{"name": n.strip(), "url": u.strip()} for n, _, u in (x.partition("|") 
 T_STATE, T_SET, T_BOARD, T_STATUS = BASE + "/control", BASE + "/control/set", BASE + "/board", BASE + "/status"
 SIM_RECORD_REAL = os.environ.get("SIM_RECORD_REAL", "") == "1"
 T_PAIR, T_EVENTS, T_MINUTES = BASE + "/control/pair", BASE + "/events", BASE + "/minutes"
+# the OEE panel of every dashboard, from the database (oee.py): posted to <line>/oee (retained) every OEE_EVERY_S
+T_OEE, DATABASE_URI, OEE_EVERY_S = BASE + "/oee", os.environ.get("DATABASE_URI", ""), 5.0
 PRESS_EVENT = {"good": "good", "rej": "reject", "undo": "undo", "reset": "reset", "clear": "oee_clear"}
 QLOG_MAX = 200
 CLOCK_SPEEDS = (1, 10, 60)
@@ -504,6 +508,30 @@ def publish(client):
     dirty = False
 
 
+def oee_loop(client):
+    """the OEE panel from the database every OEE_EVERY_S, on its own thread (a slow database never holds up the hub)"""
+    conn = None
+    while True:
+        time.sleep(OEE_EVERY_S)
+        if not restored or not client.is_connected():
+            continue
+        # the line being recorded: the simulated clock's (test), else the board (the simulated line in real time
+        # only with SIM_RECORD_REAL)
+        source = "test" if testing() else "sim" if SIM_RECORD_REAL and src() == "sim" else "board"
+        try:
+            conn = conn or oee.connect(DATABASE_URI)
+            out = oee.panel(conn, LINE_ID, dict(state["shift"]), line_ms(), source)
+        except Exception as e:   # the database is down or starting: the pages keep the last numbers
+            print(f"control-hub: OEE from the database: {type(e).__name__}: {e}", flush=True)
+            if conn:
+                conn.close()
+            conn = None
+            continue
+        if out:
+            out["ms"] = int(wall_ms())
+            client.publish(T_OEE, json.dumps(out, separators=(",", ":")), qos=0, retain=True)
+
+
 def on_message(client, _userdata, msg):
     global board_at, restored, dirty
     global board_status
@@ -578,6 +606,8 @@ def main():
     threading.Thread(target=ThreadingHTTPServer(("0.0.0.0", PAIR_HTTP_PORT), PairHandler).serve_forever, daemon=True).start()
     client.connect_async(HOST, PORT, keepalive=30)
     client.loop_start()
+    if DATABASE_URI:
+        threading.Thread(target=oee_loop, args=(client,), daemon=True).start()
     started, last_pub, last_src = time.monotonic(), 0.0, None
     last_step = time.monotonic()
     while True:

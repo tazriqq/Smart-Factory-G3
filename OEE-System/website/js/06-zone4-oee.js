@@ -2,14 +2,15 @@
 // was <script type="module">: wrapped so its names stay private, loaded with defer (same order)
 (function () {
 "use strict";
-// OEE panel: records when the machine runs, takes part counts from buttons, and reports
-// A × P × Q for a chosen time frame.
-//   A (availability) = run time ÷ recorded plan operating time
-//   P (performance)  = ideal cycle × parts ÷ run time
-//   Q (quality)      = good parts ÷ all parts
-// Run = spindle spinning and at least one axis moved within the last 1.5 s.
-// Plan operating time = the shift minus its break. Time with no record (page closed) is shown
-// on its own and left out of A, rather than counted as running or stopped.
+// OEE panel: A × P × Q of the whole line for a chosen time frame, from the database. The server's control-hub
+// works it out (server/control-hub/oee.py) and posts it to <line>/oee every few seconds; every page shows that
+// one answer (window.oee.setLive), so this page keeps no record and every screen shows the same numbers as the
+// Google Sheet and the daily report.
+//   A (availability) = run time ÷ recorded plan operating time (all machines)
+//   P (performance)  = ideal time of the parts made ÷ run time (at most 100 %)
+//   Q (quality)      = good ÷ (good + reject) of the QC presses
+// Plan operating time = the shift minus its break. Time with no row in the database is shown on its own and left
+// out of A, rather than counted as running or stopped. Between answers only the clock and the now line move.
 (() => {
   const root = document.querySelector(".oee");
   if (!root || !window.cnc) return;
@@ -27,7 +28,7 @@
     del(k) { try { localStorage.removeItem(k); } catch {} },
   };
   const SETTINGS = "cnc-oee-settings-v3";
-  const LOG = "cnc-oee-log-v3";
+  store.del("cnc-oee-log-v3");   // the record this page used to keep in the browser: the database has it now
   let win = "shift";
   const saved = store.get(SETTINGS);
   if (saved) {
@@ -62,7 +63,6 @@
   const demo = { pending: false };
   const isDemo = () => inp.clock.value === "demo";
   const lineClock = () => (window.__lineClock && window.__lineClock.mode === "sim" ? window.__lineClock : null);
-  const rate = () => Math.max(1, (lineClock() || {}).speed || 1);
   function startDemo() { demo.pending = false; }
   const now = () => (isDemo() && lineClock() ? lineClock().now() : Date.now());
 
@@ -111,76 +111,27 @@
     return { w0: t - n, w1: t, bad: "" };
   }
 
-  // ───────── the record: [from, to, run, cause] segments and [time, good] parts ─────────
-  // cause: why the line stood still (stops only; see window.__line.stopCause), "" when not known
-  let log = { segs: [], parts: [] };
-  function loadLog() {
-    if (isDemo()) { log = { segs: [], parts: [] }; return; }
-    const rec = store.get(LOG);
-    log = rec && Array.isArray(rec.segs) && Array.isArray(rec.parts) ? rec : { segs: [], parts: [] };
-    const keep = Date.now() - 8 * 24 * 60 * MIN; // a week of history is plenty
-    log.segs = log.segs.filter((sg) => sg[1] >= keep);
-    log.parts = log.parts.filter((p) => p[0] >= keep);
-  }
-  let dirty = false;
-  const persist = () => { if (!isDemo() && dirty) { store.set(LOG, log); dirty = false; } };
+  // ───────── the server's answer (server/control-hub/oee.py): numbers, [from, to, state, cause] segs, [time, good] parts ─────────
+  // state 1 = ran, 0 = stood (cause: why), -1 = not recorded (cause: why)
+  let live = null;
+  const segs = () => (live && Array.isArray(live.segs) ? live.segs : []);
+  const partMarks = () => (live && Array.isArray(live.parts) ? live.parts : []);
 
-  // ───────── sampling the machine ─────────
-  let lastPos = null, lastMoveAt = -1e12, running = false;
-  function sample() {
-    const st = window.cnc.status();
-    const real = Date.now();
-    if (lastPos && Math.hypot(st.pos[0] - lastPos[0], st.pos[1] - lastPos[1], st.pos[2] - lastPos[2]) > 0.01) lastMoveAt = real;
-    lastPos = st.pos;
-    running = st.spindle > 0.4 && real - lastMoveAt < 1500;
+  // ───────── the line right now (for the RUN / STOP chip only: the numbers come from the database) ─────────
+  let running = false;
+  function sampleNow() {
     if (window.__board?.live) running = window.__board.lineRun();   // board: line runs when all 4 run switches are on and no alarm
-    // the line: it runs when every machine on a product route runs; otherwise this says why not
     const cause = window.__line?.stopCause ? window.__line.stopCause() : null;
     if (cause !== null) running = !cause;
-    if (isDemo() && demo.pending) { demo.pending = false; demo.realAt = real; }
-    const t = now();
-    let run = running ? 1 : 0;
-    const tol = isDemo() ? Math.max(65000, 5000 * rate()) : 65000; // longer gaps are "not recorded"
-    const last = log.segs[log.segs.length - 1];
-    // the real line without its board (or this page without the server): not recorded, and why (run -1)
-    const wait = window.__lineWait || "";
-    if (wait) { run = -1; }
-    const why = wait || (run ? "" : cause || "");
-    if (last && t >= last[1] && t - last[1] <= tol) {
-      if (last[2] === run && (last[3] || "") === why) last[1] = t;
-      else log.segs.push([last[1], t, run, why]);
-    } else if (!last || t > last[1]) log.segs.push([t, t, run, why]);
-    // cap the record so localStorage stays small
-    if (log.segs.length > 20000) log.segs.splice(0, log.segs.length - 20000);
-    dirty = true;
   }
 
-  // ───────── parts ─────────
-  // the board's QC buttons count here exactly like +1 Good / +1 Reject
-  window.__board?.on("good", () => { log.parts.push([now(), 1]); dirty = true; persist(); render(); });
-  window.__board?.on("reject", () => { log.parts.push([now(), 0]); dirty = true; persist(); render(); });
   const runLegend = [...root.querySelectorAll(".oee-legend span")].find((x) => /^Run:/.test(x.textContent.trim()));
   const runLegendText = runLegend ? runLegend.lastChild.textContent : "";
-  window.__board?.on("live", (on) => { if (runLegend) runLegend.lastChild.textContent = on ? "Run: board · all 4 run switches on, no alarm" : runLegendText; });
+  window.__board?.on("live", (on) => { if (runLegend) runLegend.lastChild.textContent = on ? "Run: board · from the database, every 5 s" : runLegendText; });
   root.addEventListener("click", (e) => {
     const b = e.target.closest("button");
     if (!b) return;
-    if (b.dataset.part === "good" || b.dataset.part === "bad") { log.parts.push([now(), b.dataset.part === "good" ? 1 : 0]); dirty = true; persist(); render(); }
-    if (b.dataset.part === "undo") { log.parts.pop(); dirty = true; persist(); render(); }
     if (b.dataset.win) { win = b.dataset.win; if (win === "custom") seedCustom(); save(); render(); }
-    if (b.dataset.oee === "clear") {
-      if (!b.hasAttribute("data-armed")) {
-        b.setAttribute("data-armed", "");
-        b.textContent = "Click again to clear";
-        setTimeout(() => { b.removeAttribute("data-armed"); b.textContent = "Clear record"; }, 3000);
-        return;
-      }
-      b.removeAttribute("data-armed");
-      b.textContent = "Clear record";
-      log = { segs: [], parts: [] };
-      if (isDemo()) startDemo(); else store.del(LOG);
-      render();
-    }
   });
   function seedCustom() {
     // a fresh custom frame starts from the shift
@@ -191,31 +142,16 @@
   for (const el of Object.values(inp)) el.addEventListener("change", () => {
     if (el === inp.from || el === inp.to) win = "custom";
     if (el === inp.start || el === inp.work || el === inp.blen) fitEnd();
-    if (el === inp.clock) { if (isDemo()) startDemo(); loadLog(); }
+    if (el === inp.clock && isDemo()) startDemo();
     save();
     render();
   });
 
   // ───────── the numbers ─────────
-  function measure(t, sh, w0, w1) {
-    const e1 = Math.min(w1, t); // only time that has passed counts
-    let plan = 0, elapsed = 0, run = 0, stop = 0;
-    for (const [a, b] of sh.plan) { plan += overlap(w0, w1, a, b); elapsed += overlap(w0, e1, a, b); }
-    for (const [a, b, r] of log.segs) {
-      if (b < w0 || a > e1) continue;
-      for (const [p0, p1] of sh.plan) {
-        const ov = Math.max(0, Math.min(b, e1, w1, p1) - Math.max(a, w0, p0));
-        if (r > 0) run += ov; else if (r === 0) stop += ov;   // r -1: not recorded
-      }
-    }
-    let good = 0, bad = 0;
-    for (const [pt, g] of log.parts) if (pt >= w0 && pt <= e1) { if (g) good++; else bad++; }
-    const rec = run + stop;
-    const parts = good + bad;
-    const A = rec > 0 ? run / rec : NaN;
-    const P = parts > 0 && run > 0 && sh.cycle > 0 ? (sh.cycle * 1000 * parts) / run : NaN;
-    const Q = parts > 0 ? good / parts : NaN;
-    return { plan, elapsed, run, stop, gap: Math.max(0, elapsed - rec), rec, good, bad, parts, A, P, Q, OEE: A * P * Q };
+  function measure() {
+    const n = (k) => (live && Number.isFinite(live[k]) ? live[k] : 0), r = (k) => (live && Number.isFinite(live[k]) ? live[k] : NaN);
+    return { plan: n("plan"), elapsed: n("elapsed"), run: n("run"), stop: n("stop"), gap: n("gap"), rec: n("rec"), mrun: n("mrun"), ideal: n("ideal"),
+      good: n("good"), bad: n("bad"), parts: n("good") + n("bad"), A: r("A"), P: r("P"), Q: r("Q"), OEE: r("OEE") };
   }
 
   // ───────── drawing ─────────
@@ -249,7 +185,7 @@
     chip.textContent = window.__board?.live && window.__board.al ? "ALARM" : running ? "RUN" : "STOP";
     if (sh.bad) { svg.innerHTML = ""; shownSvg = ""; return; }
 
-    const m = measure(t, sh, w0, w1);
+    const m = measure();
     o("plan").textContent = dur(m.elapsed);
     o("planof").textContent = m.plan > m.elapsed ? `of ${dur(m.plan)} in this time frame` : "in this time frame";
     o("run").textContent = dur(m.run);
@@ -258,11 +194,11 @@
     o("good").textContent = String(m.good);
     o("bad").textContent = String(m.bad);
     o("a").textContent = pc(m.A);
-    o("af").textContent = m.rec > 0 ? `${dur(m.run)} ÷ ${dur(m.rec)} recorded` : t < sh.start ? "shift has not started" : "nothing recorded yet";
+    o("af").textContent = !live ? "waiting for the server …" : m.rec > 0 ? `${dur(m.run)} ÷ ${dur(m.rec)} recorded` : t < sh.start ? "shift has not started" : "nothing recorded yet";
     o("p").textContent = pc(m.P);
-    o("pf").textContent = m.parts > 0 ? (m.run > 0 ? `${sh.cycle} s × ${m.parts} parts ÷ ${dur(m.run)}${m.P > 1 ? " · above 100%: check the ideal cycle" : ""}` : "no run time yet") : "press +1 Good or +1 Reject";
+    o("pf").textContent = m.mrun > 0 ? `ideal ${dur(m.ideal)} ÷ machines' run ${dur(m.mrun)}${m.ideal > m.mrun ? " · capped at 100%" : ""}` : "no run time yet";
     o("q").textContent = pc(m.Q);
-    o("qf").textContent = m.parts > 0 ? `${m.good} good ÷ ${m.parts} parts` : "press +1 Good or +1 Reject";
+    o("qf").textContent = m.parts > 0 ? `${m.good} good ÷ ${m.parts} QC presses` : "QC: GOOD / REJECT on the board or the control page";
     o("oee").textContent = pc(m.OEE);
     o("of").textContent = Number.isFinite(m.OEE) ? `${pc(m.A)} × ${pc(m.P)} × ${pc(m.Q)}` : "needs A, P and Q";
 
@@ -277,7 +213,7 @@
     p.push(`<defs><pattern id="oee-hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" class="oee-future"/><line x1="0" y1="0" x2="0" y2="6" class="oee-hatch-line"/></pattern><pattern id="oee-off" width="4" height="4" patternUnits="userSpaceOnUse"><rect width="4" height="4" class="oee-future"/><circle cx="2" cy="2" r=".6" class="oee-off-line"/></pattern></defs>`);
     p.push(`<rect class="oee-future" x="${L}" y="${Y}" width="${R - L}" height="${BH}"/>`);
     if (upto > r0) p.push(`<rect fill="url(#oee-hatch)" x="${L}" y="${Y}" width="${(x(upto) - L).toFixed(1)}" height="${BH}"/>`);
-    for (const [a, b, rr] of log.segs) {
+    for (const [a, b, rr] of segs()) {
       const a1 = Math.max(a, r0), b1 = Math.min(b, r1);
       if (b1 <= a1) continue;
       p.push(`<rect class="${rr > 0 ? "oee-run" : rr < 0 ? "oee-nr" : "oee-stop"}" x="${X(a1)}" y="${Y}" width="${Math.max(0.6, x(b1) - x(a1)).toFixed(2)}" height="${BH}"/>`);
@@ -293,7 +229,7 @@
     if (fx1 < R) p.push(`<rect class="oee-dim" x="${fx1.toFixed(1)}" y="${Y}" width="${(R - fx1).toFixed(1)}" height="${BH}"/>`);
     if (fx1 > fx0) p.push(`<rect class="oee-win" x="${fx0.toFixed(1)}" y="${Y - 3}" width="${(fx1 - fx0).toFixed(1)}" height="${BH + 6}"/>`);
     // part marks above the bar
-    for (const [pt, g] of log.parts) if (pt >= r0 && pt <= r1) p.push(`<line class="${g ? "oee-mark-good" : "oee-mark-bad"}" x1="${X(pt)}" x2="${X(pt)}" y1="${Y - 11}" y2="${Y - 4}"/>`);
+    for (const [pt, g] of partMarks()) if (pt >= r0 && pt <= r1) p.push(`<line class="${g ? "oee-mark-good" : "oee-mark-bad"}" x1="${X(pt)}" x2="${X(pt)}" y1="${Y - 11}" y2="${Y - 4}"/>`);
     // hour ticks and labels under the bar
     const hour = 60 * MIN;
     const every = (x(r0 + hour) - x(r0)) < 30 ? 2 : 1;
@@ -328,9 +264,8 @@
   // the stops inside [r0, min(r1, t)], next ones with the same cause joined
   function stopsIn(r0, r1) {
     const out = [];
-    for (const [a, b, r, c0] of log.segs) {
+    for (const [a, b, r, c] of segs()) {                                // not recorded: its cause starts "ไม่ได้บันทึก · "
       if (r > 0 || b <= r0 || a >= r1) continue;
-      const c = r < 0 ? "ไม่ได้บันทึก · " + (c0 || "") : c0 || "";       // not recorded: listed with its why
       const a1 = Math.max(a, r0), b1 = Math.min(b, r1), last = out[out.length - 1];
       if (last && last.c === c && a1 - last.b < 1000) last.b = b1;
       else out.push({ a: a1, b: b1, c });
@@ -347,7 +282,7 @@
     const L = 16, R = W - 16, Y = 30, BH = 46;
     const x = (v) => L + ((v - r0) / (r1 - r0)) * (R - L), X = (v) => x(v).toFixed(1);
     const p = [`<rect class="oee-future" x="${L}" y="${Y}" width="${R - L}" height="${BH}"/>`];
-    for (const [a, b, rr] of log.segs) {
+    for (const [a, b, rr] of segs()) {
       const a1 = Math.max(a, r0), b1 = Math.min(b, r1);
       if (b1 > a1) p.push(`<rect class="${rr > 0 ? "oee-run" : rr < 0 ? "oee-nr" : "oee-stop"}" x="${X(a1)}" y="${Y}" width="${Math.max(0.8, x(b1) - x(a1)).toFixed(2)}" height="${BH}"/>`);
     }
@@ -399,11 +334,12 @@
 
   // ───────── start ─────────
   if (isDemo()) startDemo();
-  loadLog();
+  sampleNow();
   render();
-  setInterval(() => { sample(); render(); }, 250);
-  setInterval(persist, 2000);
-  addEventListener("pagehide", () => { dirty = true; persist(); });
+  // once a second, and not at all while the tab is hidden: the numbers only change when the server's answer comes
+  setInterval(() => { if (!document.hidden) { sampleNow(); render(); } }, 1000);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) { sampleNow(); render(); drawZoom(); } });
+  const setLive = (m) => { if (!m || typeof m !== "object") return; live = m; if (!document.hidden) { render(); drawZoom(); } };
   // the shift and time frame are set on the control page (kept by the server's control-hub) for every screen
   const applySettings = (s) => {
     if (!s) return;
@@ -413,10 +349,10 @@
     if (s.win && String(s.win) !== win) { win = String(s.win); changed = true; }
     if (!changed) return;
     fitEnd();
-    if (clock) { if (isDemo()) startDemo(); loadLog(); }
+    if (clock && isDemo()) startDemo();
     save(); render();
   };
-  const clearRecord = () => { log = { segs: [], parts: [] }; if (isDemo()) startDemo(); else store.del(LOG); render(); };
+  const clearRecord = () => {};   // the record is the database's now: nothing to clear on this page
   // ───────── links: the other pages, and the server's own (LINKS in server/.env, e.g. the Google Sheet) ─────────
   const linkBox = document.createElement("nav");
   linkBox.className = "oee-links"; linkBox.setAttribute("aria-label", "Links");
@@ -443,7 +379,7 @@
   drawLinks();
   const setLinks = (list) => { const k = JSON.stringify(list); if (k === JSON.stringify(extra)) return; extra = Array.isArray(list) ? list : []; drawLinks(); };
 
-  window.oee = { applySettings, setLinks, clear: clearRecord, measure: () => { const t = now(); const sh = shiftOf(t); const w = windowOf(t, sh); return measure(t, sh, w.w0, w.w1); }, log: () => log, now,
+  window.oee = { applySettings, setLinks, setLive, clear: clearRecord, measure, now,
     frame: () => { const t = now(); const w = windowOf(t, shiftOf(t)); return { t, w0: w.w0, w1: w.w1, bad: w.bad, fixed: win === "shift" || win === "custom" }; } };
 })();
 })();

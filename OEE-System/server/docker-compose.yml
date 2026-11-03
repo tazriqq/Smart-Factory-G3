@@ -149,7 +149,10 @@ services:
     restart: unless-stopped
     depends_on:
       - mosquitto
+      - timescaledb
     environment:
+      # the OEE panel of every dashboard comes from the database (control-hub/oee.py), read only
+      DATABASE_URI: postgresql://reader:${PG_READER_PASS}@timescaledb:5432/${PG_DB}
       MQTT_USER: hub
       MQTT_PASS: ${MQTT_HUB_PASS}
       LINE_ID: ${LINE_ID}
