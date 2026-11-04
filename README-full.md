@@ -345,7 +345,10 @@ docker compose ps                 # ดูสถานะ
 docker compose logs -f telegraf   # ข้อมูลเข้า database ปกติไหม
 docker compose restart            # รีสตาร์ททุกตัว
 docker compose down               # หยุด (ข้อมูลยังอยู่) · down -v = ลบข้อมูลทั้งหมด
+# แก้ mosquitto/acl แล้วให้ใช้ทันที (ไม่ตัดบอร์ด): ส่งสัญญาณจากข้างใน container เท่านั้น
+docker compose exec mosquitto sh -c 'cp /mosquitto/config/acl /mosquitto/acl && chown mosquitto:mosquitto /mosquitto/acl && kill -HUP 1'
 ```
+**อย่าใช้ `docker kill -s HUP …`** กับ container ไหนก็ตาม: Docker นับเป็น "ผู้ใช้สั่งหยุด" แม้เป็นแค่สัญญาณ reload แล้ว container นั้นจะ**ไม่เปิดเองหลังรีบูตเครื่อง** (`restart: unless-stopped`)
 
 **อัปเดตโค้ดจาก GitHub** (ข้อมูลเดิมไม่หาย):
 ```bash
@@ -374,6 +377,7 @@ docker compose exec timescaledb psql -U factory_admin -d factory -c "SELECT max(
 
 | อาการ | สาเหตุที่พบบ่อย | แก้ |
 |---|---|---|
+| หน้า OEE / control ขึ้น 502 หลังรีบูตเครื่อง · `docker compose ps` เห็น `web` Restarting | `mosquitto` ไม่ได้เปิด (Exited) nginx หา `mosquitto` ไม่เจอ (`host not found in upstream "mosquitto"`) | `docker compose up -d mosquitto` · สาเหตุที่ไม่เปิดเอง: เคยสั่ง `docker kill` กับมัน (ดูข้อ 9) |
 | ข้อมูลบอร์ดไม่เข้า database / ไม่ขึ้นชีต ทั้งที่บอร์ดออนไลน์ | Telegraf หลุดจาก MQTT (หลังสร้าง Mosquitto ใหม่) | watchdog แก้เองภายใน ~3–4 นาที · หรือ `docker compose restart telegraf` |
 | หน้า control / OEE บนเครื่องอื่นต่อ MQTT ไม่ได้ | ยังจำที่อยู่เก่า `…:9001` (ปิดแล้ว) | เปิดหน้าใหม่ (ย้ายไป `/mqtt` ให้เอง) หรือแก้ช่อง broker เป็น `ws://<SERVER_IP>:8080/mqtt` |
 | อยากได้ข้อมูลเมื่อวานคืน | — | `server/backups/factory-YYYY-MM-DD.dump` |
